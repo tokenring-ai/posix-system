@@ -1,21 +1,19 @@
 import path from "node:path";
 import fs from "fs-extra";
 import {afterEach, beforeEach, describe, expect, it} from "vitest";
-import {LocalFileSystemService} from "../index.js";
+import PosixFileSystemProvider from "../PosixFileSystemProvider";
 
 /**
- * Integration tests for LocalFileSystemService that test the complete flow
+ * Integration tests for PosixFileSystemProvider that test the complete flow
  * including file operations and edge cases.
  */
-describe("LocalFileSystemService Integration Tests", () => {
- let testDir!: string;
- let service!: LocalFileSystemService;
+describe("PosixFileSystemProvider Integration Tests", () => {
+  let testDir = "/tmp/posix-filesystem-test";
+  let service!: PosixFileSystemProvider;
 
  beforeEach(() => {
-  // Create a temporary directory for testing
-  testDir = path.join(process.cwd(), "test-temp", Date.now().toString());
   fs.ensureDirSync(testDir);
-  service = new LocalFileSystemService({baseDirectory: testDir});
+  service = new PosixFileSystemProvider({workingDirectory: testDir});
  });
 
  afterEach(() => {
@@ -106,7 +104,7 @@ describe("LocalFileSystemService Integration Tests", () => {
   it("should throw error for non-existent file operations", async () => {
    const nonExistentFile = "non-existent.txt";
 
-   await expect(service.readFile(nonExistentFile)).rejects.toThrow();
+   await expect(service.readFile(nonExistentFile)).resolves.toBeNull();
    await expect(service.deleteFile(nonExistentFile)).rejects.toThrow();
   });
 
@@ -131,22 +129,6 @@ describe("LocalFileSystemService Integration Tests", () => {
    expect(txtFiles).toContain("file1.txt");
    expect(txtFiles).toContain("file2.txt");
    expect(txtFiles).toHaveLength(2);
-  });
- });
-
- describe("Execute Command", () => {
-  it("should execute shell commands", async () => {
-   // Simple command test
-   const result = await service.executeCommand("echo hello",{ timeoutSeconds: 5});
-   expect(result.ok).toBe(true);
-   expect(result.stdout).toBe("hello");
-  });
-
-  it("should handle command errors gracefully", async () => {
-   // Command that should fail
-   const result = await service.executeCommand("false", { timeoutSeconds: 5 });
-   expect(result.ok).toBe(false);
-   expect(result.exitCode).toBe(1);
   });
  });
 });

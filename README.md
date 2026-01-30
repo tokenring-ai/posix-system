@@ -1,6 +1,8 @@
-# @tokenring-ai/local-filesystem
+# @tokenring-ai/posix-system
 
 ## Overview
+
+Implements Posix
 
 A concrete implementation of the FileSystemProvider abstraction that provides safe, root-scoped access to the local filesystem for Token Ring apps and agents.
 

@@ -1,1 +1,2 @@
-export {default as LocalFileSystemService} from "./LocalFileSystemProvider.ts";
+export {default as PosixFileSystemProvider} from "./PosixFileSystemProvider.ts";
+export {default as PosixTerminalProvider} from "./PosixTerminalProvider.ts";

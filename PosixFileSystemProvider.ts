@@ -1,7 +1,5 @@
 import FileSystemProvider, {
   DirectoryTreeOptions,
-  ExecuteCommandOptions,
-  ExecuteCommandResult,
   GlobOptions,
   GrepOptions,
   GrepResult,
@@ -9,40 +7,34 @@ import FileSystemProvider, {
   WatchOptions
 } from "@tokenring-ai/filesystem/FileSystemProvider";
 import chokidar, {FSWatcher} from "chokidar";
-import {execa, Options} from "execa";
 import fs from "fs-extra";
 import {glob} from "glob";
 import path from "node:path";
-import {z} from "zod";
+import type {LocalFileSystemProviderOptions} from "./schema.ts";
 
-export default class LocalFileSystemProvider implements FileSystemProvider {
+export default class PosixFileSystemProvider implements FileSystemProvider {
   name = "LocalFilesystemProvider";
   description = "Provides access to the local filesystem";
-  private readonly rootDirectory!: string;
 
-  constructor(options: LocalFileSystemProviderOptions) {
-    const {baseDirectory} = options;
-
-
-    if (!fs.existsSync(baseDirectory)) {
-      throw new Error(`Root directory ${baseDirectory} does not exist`);
+  constructor(readonly options: LocalFileSystemProviderOptions) {
+    if (!fs.existsSync(options.workingDirectory)) {
+      throw new Error(`Root directory ${options.workingDirectory} does not exist`);
     }
-    this.rootDirectory = baseDirectory;
   }
   relativeOrAbsolutePathToAbsolutePath(p: string): string {
     if (path.isAbsolute(p)) {
-      const relativePath = path.relative(this.rootDirectory, p);
+      const relativePath = path.relative(this.options.workingDirectory, p);
       if (relativePath.startsWith("..") || path.isAbsolute(relativePath)) {
         throw new Error(`Path ${p} is outside the root directory`);
       }
       return p;
     } else {
-      return path.resolve(this.rootDirectory, p);
+      return path.resolve(this.options.workingDirectory, p);
     }
   }
 
   relativeOrAbsolutePathToRelativePath(p: string): string {
-    return path.relative(this.rootDirectory, this.relativeOrAbsolutePathToAbsolutePath(p));
+    return path.relative(this.options.workingDirectory, this.relativeOrAbsolutePathToAbsolutePath(p));
   }
 
   async writeFile(filePath: string, content: string | Buffer): Promise<boolean> {
@@ -181,7 +173,7 @@ export default class LocalFileSystemProvider implements FileSystemProvider {
     try {
       return glob
         .sync(pattern, {
-          cwd: this.rootDirectory,
+          cwd: this.options.workingDirectory,
           dot: true,
           nodir: !includeDirectories,
           absolute: false,
@@ -198,13 +190,13 @@ export default class LocalFileSystemProvider implements FileSystemProvider {
     dir: string,
     {ignoreFilter, pollInterval = 1000, stabilityThreshold = 2000}: WatchOptions
   ): Promise<FSWatcher> {
-    const absolutePath = path.resolve(this.rootDirectory, dir);
+    const absolutePath = path.resolve(this.options.workingDirectory, dir);
 
     if (!(await fs.pathExists(absolutePath))) {
       throw new Error(`Directory ${dir} does not exist`);
     }
 
-    const cwd = path.relative(process.cwd(), this.rootDirectory);
+    const cwd = path.relative(process.cwd(), this.options.workingDirectory);
     return chokidar.watch("./", {
       ignored: (file: string) => {
         if (file === "." || file === "./") return false;
@@ -225,54 +217,6 @@ export default class LocalFileSystemProvider implements FileSystemProvider {
         pollInterval,
       },
     });
-  }
-
-  async executeCommand(command: string | string[], options: ExecuteCommandOptions): Promise<ExecuteCommandResult> {
-    const {timeoutSeconds, env = {}, workingDirectory = "./"} = options;
-
-    if (!command) {
-      throw new Error("Command is required");
-    }
-
-    const cwd = this.relativeOrAbsolutePathToAbsolutePath(workingDirectory);
-
-    const execOpts: Options = {
-      cwd,
-      env: {...process.env, ...env},
-      timeout: timeoutSeconds * 1000,
-      maxBuffer: 1024 * 1024,
-      stdin: "ignore",
-    };
-
-    try {
-      let result: any;
-
-      if (Array.isArray(command)) {
-        if (command.length === 0) {
-          throw new Error("Command array cannot be empty");
-        }
-        const [cmd, ...args] = command;
-        result = await execa(cmd, args, execOpts);
-      } else {
-        result = await execa(command, {...execOpts, shell: true});
-      }
-
-      const {stdout, stderr, exitCode} = result;
-      return {
-        ok: true,
-        exitCode: exitCode,
-        stdout: (stdout?.trim?.() ?? ""),
-        stderr: (stderr?.trim?.() ?? ""),
-      };
-    } catch (err: any) {
-      return {
-        ok: false,
-        exitCode: typeof err.exitCode === "number" ? err.exitCode : 1,
-        stdout: (err.stdout?.trim?.() ?? ""),
-        stderr: (err.stderr?.trim?.() ?? ""),
-        error: err.shortMessage || err.message || "Unknown error",
-      };
-    }
   }
 
   async grep(
@@ -334,12 +278,12 @@ export default class LocalFileSystemProvider implements FileSystemProvider {
     {ignoreFilter, recursive = true}: DirectoryTreeOptions
   ): AsyncGenerator<string> {
 
-    const absoluteDir = path.resolve(this.rootDirectory, dir);
+    const absoluteDir = path.resolve(this.options.workingDirectory, dir);
     const items = await fs.readdir(absoluteDir, {withFileTypes: true});
 
     for (const item of items) {
       const itemPath = path.join(absoluteDir, item.name);
-      const relPath = path.relative(this.rootDirectory, itemPath);
+      const relPath = path.relative(this.options.workingDirectory, itemPath);
 
       if (ignoreFilter(relPath)) continue;
 
@@ -354,23 +298,4 @@ export default class LocalFileSystemProvider implements FileSystemProvider {
     }
   }
 
-  async chmod(filePath: string, mode: number): Promise<boolean> {
-    const absolutePath = this.relativeOrAbsolutePathToAbsolutePath(filePath);
-
-    if (!(await fs.pathExists(absolutePath))) {
-      throw new Error(`Path ${filePath} does not exist`);
-    }
-
-    try {
-      await fs.chmod(absolutePath, mode);
-      return true;
-    } catch (error: any) {
-      throw new Error(`Failed to change permissions for ${filePath}: ${error.message}`);
-    }
-  }
 }
-export const LocalFileSystemProviderOptionsSchema = z.object({
-  baseDirectory: z.string(),
-  defaultSelectedFiles: z.array(z.string()).optional(),
-});
-export type LocalFileSystemProviderOptions = z.infer<typeof LocalFileSystemProviderOptionsSchema>;

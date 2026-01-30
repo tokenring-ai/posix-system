@@ -1,10 +1,11 @@
 {
-  "name": "@tokenring-ai/local-filesystem",
+  "name": "@tokenring-ai/posix-system",
   "version": "0.2.0",
-  "description": "A local filesystem package for tokenring-ai",
+  "description": "A POSIX system package for TokenRing apps, providing Terminal, Filesystem, and other POSIX-related utilities",
   "dependencies": {
     "@tokenring-ai/app": "0.2.0",
     "@tokenring-ai/chat": "0.2.0",
+    "@tokenring-ai/terminal": "0.2.0",
     "zod": "catalog:",
     "@tokenring-ai/agent": "0.2.0",
     "@tokenring-ai/filesystem": "0.2.0",
