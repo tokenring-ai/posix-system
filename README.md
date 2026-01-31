@@ -2,65 +2,112 @@
 
 ## Overview
 
-Implements Posix
-
-A concrete implementation of the FileSystemProvider abstraction that provides safe, root-scoped access to the local filesystem for Token Ring apps and agents.
+A POSIX system package for TokenRing applications, providing Terminal, Filesystem, and other POSIX-related utilities. This package implements filesystem and terminal providers that enable agents to interact with the local system in a controlled, scoped manner.
 
 ## Integration
 
 - `@tokenring-ai/app`: Token Ring application framework
 - `@tokenring-ai/filesystem`: Abstract filesystem interfaces and utilities
+- `@tokenring-ai/terminal`: Abstract terminal interfaces and utilities
 - `@tokenring-ai/agent`: Agent framework
 
 ## Features
 
-- **Root-scoped**: All operations are confined to the `baseDirectory`; attempts to access paths outside are rejected
+- **Filesystem Provider**: Full-featured filesystem operations with root-scoped access
+- **Terminal Provider**: Shell command execution with configurable environment and timeouts
+- **Root-scoped operations**: All operations are confined to the `workingDirectory`; attempts to access paths outside are rejected
 - **Ignore-aware**: Most listing/searching methods accept an ignore filter for respecting VCS/IDE ignore rules
 - **Watcher-backed**: Uses chokidar for robust file system watching
 - **Shell execution**: Uses execa with configurable timeouts and environment overrides
 - **Type-safe**: Built with TypeScript and Zod for configuration validation
 - **Plugin architecture**: Designed to integrate with Token Ring applications as a plugin
-- **Zod validation**: Configuration schema built with Zod for runtime validation
+- **Zod validation**: Configuration schemas built with Zod for runtime validation
 
 ## Installation
 
 This package is part of the Token Ring monorepo. Add it to your dependencies:
 
 ```bash
-bun add @tokenring-ai/local-filesystem
+bun add @tokenring-ai/posix-system
 ```
 
 ```json
 {
   "dependencies": {
-    "@tokenring-ai/local-filesystem": "0.2.0"
+    "@tokenring-ai/posix-system": "0.2.0"
   }
 }
 ```
 
-## Core Components/API
+## Plugin Configuration
 
-### Constructor
+The package is designed to be used as a Token Ring plugin with filesystem and terminal providers.
 
-```ts
-new LocalFileSystemProvider(options: LocalFileSystemProviderOptions)
+### Filesystem Provider
+
+The `PosixFileSystemProvider` provides filesystem operations with root-scoped access:
+
+```json
+{
+  "config": {
+    "filesystem": {
+      "providers": {
+        "posix": {
+          "type": "posix",
+          "workingDirectory": "/path/to/your/project",
+          "defaultSelectedFiles": ["**/*.ts", "**/*.js"]
+        }
+      }
+    }
+  }
+}
 ```
 
-**Options:**
-- `baseDirectory: string` - The root directory for all file operations (required)
-- `defaultSelectedFiles?: string[]` - Default file patterns for selection (optional)
+### Terminal Provider
 
-### Properties
+The `PosixTerminalProvider` provides shell command execution:
+
+```json
+{
+  "config": {
+    "terminal": {
+      "providers": {
+        "posix": {
+          "type": "posix",
+          "workingDirectory": "/path/to/your/project"
+        }
+      }
+    }
+  }
+}
+```
+
+## Core Components
+
+### PosixFileSystemProvider
+
+A concrete implementation of the `FileSystemProvider` abstraction that provides safe, root-scoped access to the local filesystem for Token Ring apps and agents.
+
+**Constructor Options:**
+
+```typescript
+interface LocalFileSystemProviderOptions {
+  workingDirectory: string;  // The root directory for all file operations
+  defaultSelectedFiles?: string[];  // Default file patterns for selection
+}
+```
+
+**Properties:**
 
 - `name: string` - Provider name ("LocalFilesystemProvider")
 - `description: string` - Provider description ("Provides access to the local filesystem")
 
-### Path Utilities
+**Path Utilities:**
 
 - `relativeOrAbsolutePathToAbsolutePath(p: string): string` - Converts any path to absolute path within bounds
 - `relativeOrAbsolutePathToRelativePath(p: string): string` - Converts absolute path to relative path
 
-### File Operations
+**File Operations:**
 
 - `writeFile(filePath: string, content: string | Buffer): Promise<boolean>` - Create or overwrite a file
 - `appendFile(filePath: string, content: string | Buffer): Promise<boolean>` - Append content to a file
@@ -69,42 +116,92 @@ new LocalFileSystemProvider(options: LocalFileSystemProviderOptions)
 - `rename(oldPath: string, newPath: string): Promise<boolean>` - Rename/move a file
 - `exists(filePath: string): Promise<boolean>` - Check if file exists
 - `stat(filePath: string): Promise<StatLike>` - Get file/directory statistics
-- `chmod(filePath: string, mode: number): Promise<boolean>` - Change file permissions
 
-### Directory Operations
+**Directory Operations:**
 
 - `createDirectory(dirPath: string, options?: { recursive?: boolean }): Promise<boolean>` - Create directory
 - `copy(source: string, destination: string, options?: { overwrite?: boolean }): Promise<boolean>` - Copy files/directories
 
-### Search and Listing
+**Search and Listing:**
 
-- `glob(pattern: string, options?: GlobOptions): Promise<string>` - Find files matching glob patterns
+- `glob(pattern: string, options?: GlobOptions): Promise<string[]>` - Find files matching glob patterns
 - `grep(searchString: string, options?: GrepOptions): Promise<GrepResult[]>` - Search for text in files
 - `getDirectoryTree(dir: string, options?: DirectoryTreeOptions): AsyncGenerator<string>` - Traverse directory tree
 
-### File Watching
+**File Watching:**
 
 - `watch(dir: string, options?: WatchOptions): Promise<FSWatcher>` - Watch directory for changes
 
-### Command Execution
+### PosixTerminalProvider
 
-- `executeCommand(command: string | string[], options?: ExecuteCommandOptions): Promise<ExecuteCommandResult>` - Execute shell commands
+A concrete implementation of the `TerminalProvider` abstraction that provides shell command execution capabilities.
+
+**Constructor Options:**
+
+```typescript
+interface LocalTerminalProviderOptions {
+  workingDirectory: string;  // The root directory for command execution
+}
+```
+
+**Properties:**
+
+- `name: string` - Provider name ("LocalTerminalProvider")
+- `description: string` - Provider description ("Provides shell command execution on local system")
+
+**Methods:**
+
+- `executeCommand(command: string, args: string[], options: ExecuteCommandOptions): Promise<ExecuteCommandResult>` - Execute shell commands with arguments
+- `runScript(script: string, options: ExecuteCommandOptions): Promise<ExecuteCommandResult>` - Execute shell scripts
+
+**ExecuteCommandOptions:**
+
+```typescript
+interface ExecuteCommandOptions {
+  timeoutSeconds?: number;
+  env?: Record<string, string>;
+  workingDirectory?: string;
+  input?: string;
+}
+```
+
+**ExecuteCommandResult:**
+
+```typescript
+interface ExecuteCommandResult {
+  ok: boolean;
+  output: string;
+  exitCode: number;
+  stdout: string;
+  stderr: string;
+  error?: string;
+}
+```
 
 ## Type Definitions
 
 ### LocalFileSystemProviderOptions
 
-```ts
+```typescript
 interface LocalFileSystemProviderOptions {
-  baseDirectory: string;
+  workingDirectory: string;
   defaultSelectedFiles?: string[];
+}
+```
+
+### LocalTerminalProviderOptions
+
+```typescript
+interface LocalTerminalProviderOptions {
+  workingDirectory: string;
 }
 ```
 
 ### StatLike
 
-```ts
+```typescript
 interface StatLike {
+  exists: boolean;
   path: string;
   absolutePath: string;
   isFile: boolean;
@@ -117,21 +214,9 @@ interface StatLike {
 }
 ```
 
-### ExecuteCommandResult
-
-```ts
-interface ExecuteCommandResult {
-  ok: boolean;
-  exitCode: number;
-  stdout: string;
-  stderr: string;
-  error?: string;
-}
-```
-
 ### GrepResult
 
-```ts
+```typescript
 interface GrepResult {
   file: string;
   line: number;
@@ -142,7 +227,7 @@ interface GrepResult {
 
 ### GlobOptions
 
-```ts
+```typescript
 interface GlobOptions {
   ignoreFilter?: (file: string) => boolean;
   includeDirectories?: boolean;
@@ -151,7 +236,7 @@ interface GlobOptions {
 
 ### GrepOptions
 
-```ts
+```typescript
 interface GrepOptions {
   ignoreFilter?: (file: string) => boolean;
   includeContent?: {
@@ -163,7 +248,7 @@ interface GrepOptions {
 
 ### WatchOptions
 
-```ts
+```typescript
 interface WatchOptions {
   ignoreFilter?: (file: string) => boolean;
   pollInterval?: number;
@@ -173,20 +258,10 @@ interface WatchOptions {
 
 ### DirectoryTreeOptions
 
-```ts
+```typescript
 interface DirectoryTreeOptions {
   ignoreFilter?: (file: string) => boolean;
   recursive?: boolean;
-}
-```
-
-### ExecuteCommandOptions
-
-```ts
-interface ExecuteCommandOptions {
-  timeoutSeconds?: number;
-  env?: Record<string, string>;
-  workingDirectory?: string;
 }
 ```
 
@@ -198,35 +273,41 @@ The primary usage is as a plugin within a Token Ring application:
 
 ```ts
 import TokenRingApp from "@tokenring-ai/app";
-import localFilesystemPlugin from "@tokenring-ai/local-filesystem";
+import posixSystemPlugin from "@tokenring-ai/posix-system";
 
 const app = new TokenRingApp({
   config: {
     filesystem: {
       providers: {
-        local: {
-          type: "local",
-          baseDirectory: process.cwd(),
+        posix: {
+          type: "posix",
+          workingDirectory: process.cwd(),
           defaultSelectedFiles: ["**/*.ts", "**/*.js"]
+        }
+      }
+    },
+    terminal: {
+      providers: {
+        posix: {
+          type: "posix",
+          workingDirectory: process.cwd()
         }
       }
     }
   }
 });
 
-app.use(localFilesystemPlugin);
+app.use(posixSystemPlugin);
 await app.start();
 ```
 
-### Direct Class Usage
-
-You can also use the class directly:
+### Filesystem Operations
 
 ```ts
-import LocalFileSystemProvider from "@tokenring-ai/local-filesystem";
+import PosixFileSystemProvider from "@tokenring-ai/posix-system/PosixFileSystemProvider.js";
 
-const fsProvider = new LocalFileSystemProvider({
-  baseDirectory: process.cwd(),
+const fsProvider = new PosixFileSystemProvider({
+  workingDirectory: process.cwd(),
   defaultSelectedFiles: ["**/*.ts", "**/*.js"]
 });
 
@@ -269,19 +350,38 @@ const watcher = await fsProvider.watch(".", {
 watcher.on('change', (path) => {
   console.log(`File changed: ${path}`);
 });
+```
 
-// Execute shell commands
-const result = await fsProvider.executeCommand("ls -la", {
+### Terminal Operations
+
+```ts
+import PosixTerminalProvider from "@tokenring-ai/posix-system/PosixTerminalProvider.js";
+
+const terminalProvider = new PosixTerminalProvider({
+  workingDirectory: process.cwd()
+});
+
+// Execute shell commands with arguments
+const result = await terminalProvider.executeCommand("ls", ["-la"], {
   workingDirectory: ".",
   timeoutSeconds: 30,
-  env: { CUSTOM_VAR: "value" }
+  env: { CUSTOM_VAR: "value" },
+  input: "echo test"
 });
 
 if (result.ok) {
+  console.log(result.output);
   console.log(result.stdout);
 } else {
+  console.error(result.error);
   console.error(result.stderr);
 }
+
+// Run shell scripts
+const scriptResult = await terminalProvider.runScript("npm install", {
+  workingDirectory: ".",
+  timeoutSeconds: 60
+});
 ```
 
 ### Path Resolution
@@ -289,11 +389,11 @@ if (result.ok) {
 The provider handles both relative and absolute paths safely:
 
 ```ts
-// Relative paths are resolved relative to baseDirectory
+// Relative paths are resolved relative to workingDirectory
 const absPath = fsProvider.relativeOrAbsolutePathToAbsolutePath("file.txt");
 const relPath = fsProvider.relativeOrAbsolutePathToRelativePath(absPath);
 
-// Absolute paths outside baseDirectory throw an error
+// Absolute paths outside workingDirectory throw an error
 try {
   fsProvider.relativeOrAbsolutePathToAbsolutePath("/etc/passwd");
 } catch (error) {
@@ -336,29 +436,11 @@ console.log(items);
 // ["file1.txt", "file2.js", "src/", "src/lib.ts", "docs/", "docs/README.md"]
 ```
 
-### Plugin Configuration
-
-When using as a plugin, configure it in your app's filesystem config:
-
-```json
-{
-  "filesystem": {
-    "providers": {
-      "local": {
-        "type": "local",
-        "baseDirectory": "/path/to/your/project",
-        "defaultSelectedFiles": ["**/*.ts", "**/*.js", "**/*.md"]
-      }
-    }
-  }
-}
-```
-
 ## Error Handling
 
-The provider includes comprehensive error handling:
+The providers include comprehensive error handling:
 
-- **Security**: Paths outside the base directory throw errors
+- **Security**: Paths outside the working directory throw errors
 - **Existence checks**: Operations on non-existent paths throw appropriate errors
 - **Type safety**: Operations on directories when files are expected (and vice versa) throw errors
 - **Command execution**: Failed commands return detailed error information without throwing
@@ -390,20 +472,21 @@ Build the project to check for TypeScript errors:
 bun run build
 ```
 
-The test suite includes integration tests covering file operations, error handling, and edge cases.
+The test suite includes integration tests covering file operations, terminal execution, error handling, and edge cases.
 
 ## Dependencies
 
 - `@tokenring-ai/app`: Token Ring application framework
-- `@tokenring-ai/chat`: Chat functionality
-- `@tokenring-ai/filesystem`: Abstract filesystem interfaces
+- `@tokenring-ai/chat`: Chat functionality (if needed)
+- `@tokenring-ai/terminal`: Abstract terminal interfaces
 - `@tokenring-ai/agent`: Agent framework
+- `@tokenring-ai/filesystem`: Abstract filesystem interfaces
+- `zod`: Runtime type validation
 - `chokidar`: File system watching
 - `execa`: Shell command execution
 - `fs-extra`: File system utilities
 - `glob`: Glob pattern matching
 - `glob-gitignore`: Git ignore pattern support
-- `zod`: Runtime type validation
 
 ## License
 
