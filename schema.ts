@@ -8,6 +8,7 @@ export type LocalFileSystemProviderOptions = z.output<typeof LocalFileSystemProv
 
 export const LocalTerminalProviderOptionsSchema = z.object({
   workingDirectory: z.string(),
+  isolation: z.enum(['auto', 'none', 'bubblewrap']).default('auto'),
 });
 
 export type LocalTerminalProviderOptions = z.output<typeof LocalTerminalProviderOptionsSchema>;

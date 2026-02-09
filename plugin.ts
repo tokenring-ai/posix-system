@@ -34,7 +34,7 @@ export default {
         for (const name in config.terminal!.providers) {
           const provider = config.terminal!.providers[name];
           if (provider.type === "posix") {
-            terminalService.registerTerminalProvider(name, new PosixTerminalProvider(LocalTerminalProviderOptionsSchema.parse(provider)));
+            terminalService.registerTerminalProvider(name, new PosixTerminalProvider(app, LocalTerminalProviderOptionsSchema.parse(provider)));
           }
         }
       });

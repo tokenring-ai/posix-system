@@ -13,7 +13,7 @@ import path from "node:path";
 import type {LocalFileSystemProviderOptions} from "./schema.ts";
 
 export default class PosixFileSystemProvider implements FileSystemProvider {
-  name = "LocalFilesystemProvider";
+  readonly name = "LocalFilesystemProvider";
   description = "Provides access to the local filesystem";
 
   constructor(readonly options: LocalFileSystemProviderOptions) {

@@ -1,6 +1,5 @@
-import path from "node:path";
 import fs from "fs-extra";
-import {afterEach, beforeEach, describe, expect, it} from "vitest";
+import {beforeEach, describe, expect, it} from "vitest";
 import PosixTerminalProvider from "../PosixTerminalProvider";
 
 /**

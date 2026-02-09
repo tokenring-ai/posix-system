@@ -65,7 +65,7 @@ The `PosixFileSystemProvider` provides filesystem operations with root-scoped ac
 
 ### Terminal Provider
 
-The `PosixTerminalProvider` provides shell command execution:
+The `PosixTerminalProvider` provides shell command execution with optional sandboxing:
 
 ```json
 {
@@ -74,13 +74,20 @@ The `PosixTerminalProvider` provides shell command execution:
       "providers": {
         "posix": {
           "type": "posix",
-          "workingDirectory": "/path/to/your/project"
+          "workingDirectory": "/path/to/your/project",
+          "isolation": "auto"
         }
       }
     }
   }
 }
 ```
+
+**Isolation Modes:**
+
+- `"none"` - No sandboxing, commands run directly on the host system
+- `"bubblewrap"` - Commands run in a bubblewrap sandbox with restricted filesystem access
+- `"auto"` (default) - Automatically uses bubblewrap if the `bwrap` executable is available, otherwise falls back to none
 
 ## Core Components
 
@@ -134,13 +141,14 @@ interface LocalFileSystemProviderOptions {
 
 ### PosixTerminalProvider
 
-A concrete implementation of the `TerminalProvider` abstraction that provides shell command execution capabilities.
+A concrete implementation of the `TerminalProvider` abstraction that provides shell command execution capabilities with support for persistent sessions.
 
 **Constructor Options:**
 
 ```typescript
 interface LocalTerminalProviderOptions {
   workingDirectory: string;  // The root directory for command execution
+  isolation?: 'none' | 'bubblewrap' | 'auto';  // Sandboxing mode (default: 'auto')
 }
 ```
 
@@ -153,6 +161,12 @@ interface LocalTerminalProviderOptions {
 
 - `executeCommand(command: string, args: string[], options: ExecuteCommandOptions): Promise<ExecuteCommandResult>` - Execute shell commands with arguments
 - `runScript(script: string, options: ExecuteCommandOptions): Promise<ExecuteCommandResult>` - Execute shell scripts
+- `startInteractiveSession(options: ExecuteCommandOptions): Promise<string>` - Start an interactive terminal session, returns session ID
+- `sendInput(sessionId: string, input: string): Promise<void>` - Send input to a session
+- `collectOutput(sessionId: string, fromPosition: number, waitOptions: OutputWaitOptions): Promise<InteractiveTerminalOutput>` - Collect output from a session
+- `terminateSession(sessionId: string): Promise<void>` - Terminate a session
+- `getSessionStatus(sessionId: string): SessionStatus | null` - Get status of a session
+- `getIsolationLevel(): TerminalIsolationLevel` - Get the active isolation level ('none' or 'sandbox')
 
 **ExecuteCommandOptions:**
 
@@ -194,6 +208,7 @@ interface LocalFileSystemProviderOptions {
 ```typescript
 interface LocalTerminalProviderOptions {
   workingDirectory: string;
+  isolation?: 'none' | 'bubblewrap' | 'auto';
 }
 ```
 
@@ -358,8 +373,13 @@ watcher.on('change', (path) => {
 import PosixTerminalProvider from "@tokenring-ai/posix-system/PosixTerminalProvider.js";
 
 const terminalProvider = new PosixTerminalProvider({
-  workingDirectory: process.cwd()
+  workingDirectory: process.cwd(),
+  isolation: 'auto'  // Auto-detect bubblewrap, or use 'none' or 'bubblewrap'
 });
+
+// Check isolation level
+const isolationLevel = terminalProvider.getIsolationLevel();
+console.log(`Running with isolation: ${isolationLevel}`); // 'none' or 'sandbox'
 
 // Execute shell commands with arguments
 const result = await terminalProvider.executeCommand("ls", ["-la"], {
@@ -382,6 +402,50 @@ const scriptResult = await terminalProvider.runScript("npm install", {
   workingDirectory: ".",
   timeoutSeconds: 60
 });
+```
+
+### Persistent Terminal Sessions
+
+```ts
+import PosixTerminalProvider from "@tokenring-ai/posix-system/PosixTerminalProvider.js";
+
+const terminalProvider = new PosixTerminalProvider({
+  workingDirectory: process.cwd()
+});
+
+// Start a persistent session
+const sessionId = await terminalProvider.startPersistentSession("bash", [], {
+  timeoutSeconds: 0,
+});
+
+console.log(`Session started: ${sessionId}`);
+
+// Send input to the session
+await terminalProvider.sendInput(sessionId, "echo hello\n");
+
+// Wait a bit for output
+await new Promise(resolve => setTimeout(resolve, 100));
+
+// Collect output
+const output = await terminalProvider.collectOutput(sessionId, 0, {
+  minInterval: 0.1,
+  settleInterval: 0.5,
+  maxInterval: 5,
+});
+
+console.log(output.output);
+console.log(`Position: ${output.newPosition}`);
+console.log(`Complete: ${output.isComplete}`);
+
+// Get session status
+const status = terminalProvider.getSessionStatus(sessionId);
+if (status) {
+  console.log(`Running: ${status.running}`);
+  console.log(`Output length: ${status.outputLength}`);
+}
+
+// Terminate the session
+await terminalProvider.terminateSession(sessionId);
 ```
 
 ### Path Resolution
