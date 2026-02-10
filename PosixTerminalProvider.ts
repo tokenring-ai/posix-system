@@ -2,14 +2,15 @@ import TokenRingApp from "@tokenring-ai/app";
 import {
   type ExecuteCommandOptions,
   type ExecuteCommandResult,
-  type OutputWaitOptions,
   type InteractiveTerminalOutput,
+  type OutputWaitOptions,
   type SessionStatus,
-  type TerminalProvider,
   type TerminalIsolationLevel,
+  type TerminalProvider,
 } from "@tokenring-ai/terminal/TerminalProvider";
+import formatLogMessages from "@tokenring-ai/utility/string/formatLogMessage";
 import * as pty from 'bun-pty';
-import {execa, execaSync} from "execa";
+import {execa, ExecaError, execaSync} from "execa";
 import fs from "fs-extra";
 import path from "node:path";
 import {type LocalTerminalProviderOptions} from "./schema.ts";
@@ -55,32 +56,6 @@ export default class PosixTerminalProvider implements TerminalProvider {
     }
   }
 
-  private wrapWithBubblewrap(command: string, args: string[], cwd: string): {command: string, args: string[]} {
-    if (this.isolationLevel !== 'bubblewrap') {
-      return {command, args};
-    }
-
-    const bwrapArgs = [
-      '--ro-bind', '/usr', '/usr',
-      '--ro-bind', '/lib', '/lib',
-      '--ro-bind', '/lib64', '/lib64',
-      '--ro-bind', '/bin', '/bin',
-      '--ro-bind', '/sbin', '/sbin',
-      '--proc', '/proc',
-      '--dev', '/dev',
-      '--tmpfs', '/tmp',
-      '--bind', cwd, cwd,
-      '--chdir', cwd,
-      '--unshare-all',
-      '--share-net',
-      '--die-with-parent',
-      command,
-      ...args,
-    ];
-
-    return {command: 'bwrap', args: bwrapArgs};
-  }
-
   async executeCommand(
     command: string,
     args: string[],
@@ -96,25 +71,31 @@ export default class PosixTerminalProvider implements TerminalProvider {
         env: {...process.env, ...env},
         timeout: timeoutSeconds * 1000,
         maxBuffer: 1024 * 1024,
-        stdin: options.input ? [[options.input]] : "ignore",
+        stdin: "ignore",
         all: true,
       });
 
       return {
-        ok: true,
+        status: "success",
         output: result.all?.trim() ?? "",
-        exitCode: result.exitCode ?? 1,
-        stdout: result.stdout,
-        stderr: result.stderr,
       };
     } catch (err: any) {
+      if (err instanceof ExecaError) {
+        if (err.timedOut) {
+          return {
+            status: "timeout",
+          }
+        } else if (err.exitCode !== undefined) {
+          return {
+            status: "badExitCode",
+            output: err.all ?? "",
+            exitCode: err.exitCode,
+          }
+        }
+      }
       return {
-        ok: false,
-        output: err.all?.trim() ?? "",
-        exitCode: typeof err.exitCode === "number" ? err.exitCode : 1,
-        stdout: err.stdout?.trim?.() ?? "",
-        stderr: err.stderr?.trim?.() ?? "",
-        error: err.shortMessage || err.message || err.toString?.() || "Unknown error",
+        status: "unknownError",
+        error: formatLogMessages([err as Error])
       };
     }
   }
@@ -126,36 +107,75 @@ export default class PosixTerminalProvider implements TerminalProvider {
     const {timeoutSeconds, env = {}, workingDirectory = "./"} = options;
     const cwd = path.resolve(this.options.workingDirectory, workingDirectory);
     const shell = process.env.SHELL || '/bin/bash';
-    const wrapped = this.wrapWithBubblewrap(shell, ['-c', script], cwd);
+    const wrapped = this.wrapWithBubblewrap(shell, ["-c", script], cwd);
+
+    this.app.serviceOutput('[runScript]', 'spawning shell:', wrapped.command, ' ', wrapped.args.join(' '), 'in:', cwd);
 
     try {
       const result = await execa(wrapped.command, wrapped.args, {
         cwd,
-        shell: this.isolationLevel === 'none',
-        env: {...process.env, ...env},
+        env: {
+          ...process.env,
+          TERM: 'dumb',
+          NO_COLOR: '1',
+          ...env
+        },
         timeout: timeoutSeconds * 1000,
         maxBuffer: 1024 * 1024,
-        stdin: options.input ? [[options.input]] : "ignore",
+        stdin: "ignore",
         all: true,
       });
 
       return {
-        ok: true,
+        status: "success",
         output: result.all?.trim() ?? "",
-        exitCode: result.exitCode ?? 1,
-        stdout: result.stdout,
-        stderr: result.stderr,
       };
     } catch (err: any) {
+      if (err instanceof ExecaError) {
+        if (err.timedOut) {
+          return {
+            status: "timeout",
+          }
+        } else if (err.exitCode !== undefined) {
+          return {
+            status: "badExitCode",
+            output: err.all ?? "",
+            exitCode: err.exitCode,
+          }
+        }
+      }
       return {
-        ok: false,
-        output: err.all?.trim() ?? "",
-        exitCode: typeof err.exitCode === "number" ? err.exitCode : 1,
-        stdout: err.stdout?.trim?.() ?? "",
-        stderr: err.stderr?.trim?.() ?? "",
-        error: err.shortMessage || err.message || err.toString?.() || "Unknown error",
+        status: "unknownError",
+        error: formatLogMessages([err as Error])
       };
     }
+  }
+
+  private wrapWithBubblewrap(command: string, args: string[], cwd: string): {command: string, args: string[]} {
+    if (this.isolationLevel !== 'bubblewrap') {
+      return {command, args};
+    }
+
+    const bwrapArgs = [
+      '--ro-bind', '/usr', '/usr',
+      '--ro-bind', '/lib', '/lib',
+      '--ro-bind', '/lib64', '/lib64',
+      '--ro-bind', '/bin', '/bin',
+      '--ro-bind', '/sbin', '/sbin',
+      '--ro-bind', '/etc', '/etc',
+      '--proc', '/proc',
+      '--dev', '/dev',
+      '--tmpfs', '/tmp',
+      '--bind', cwd, cwd,
+      '--chdir', cwd,
+      '--unshare-all',
+      '--share-net',
+      '--die-with-parent',
+      command,
+      ...args,
+    ];
+
+    return {command: 'bwrap', args: bwrapArgs};
   }
 
   async startInteractiveSession(options: ExecuteCommandOptions): Promise<string> {
