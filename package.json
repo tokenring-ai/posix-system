@@ -12,7 +12,7 @@
     "chokidar": "^5.0.0",
     "execa": "^9.6.1",
     "fs-extra": "^11.3.3",
-    "glob": "^13.0.0",
+    "glob": "^13.0.5",
     "glob-gitignore": "^1.0.15",
     "bun-pty": "^0.4.8"
   },
