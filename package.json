@@ -9,6 +9,7 @@
     "zod": "^4.3.6",
     "@tokenring-ai/agent": "0.2.0",
     "@tokenring-ai/filesystem": "0.2.0",
+    "@tokenring-ai/utility": "0.2.0",
     "chokidar": "^5.0.0",
     "execa": "^9.6.1",
     "fs-extra": "^11.3.3",
