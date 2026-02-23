@@ -1,4 +1,5 @@
 import TokenRingApp from "@tokenring-ai/app";
+import {TerminalService} from "@tokenring-ai/terminal";
 import {
   type ExecuteCommandOptions,
   type ExecuteCommandResult,
@@ -33,14 +34,14 @@ export default class PosixTerminalProvider implements TerminalProvider {
   private nextId = 1;
   private readonly isolationLevel: 'none' | 'bubblewrap';
 
-  constructor(readonly app: TokenRingApp, readonly options: LocalTerminalProviderOptions) {
+  constructor(readonly app: TokenRingApp, readonly terminalService: TerminalService, readonly options: LocalTerminalProviderOptions) {
     if (!fs.existsSync(options.workingDirectory)) {
       throw new Error(`Root directory ${options.workingDirectory} does not exist`);
     }
 
     this.isolationLevel = this.resolveIsolation();
 
-    app.serviceOutput(`Using isolation level: ${this.isolationLevel}`)
+    app.serviceOutput(terminalService, `Using isolation level: ${this.isolationLevel}`)
   }
 
   private resolveIsolation(): 'none' | 'bubblewrap' {
@@ -109,7 +110,7 @@ export default class PosixTerminalProvider implements TerminalProvider {
     const shell = process.env.SHELL || '/bin/bash';
     const wrapped = this.wrapWithBubblewrap(shell, ["-c", script], cwd);
 
-    this.app.serviceOutput('[runScript]', 'spawning shell:', wrapped.command, ' ', wrapped.args.join(' '), 'in:', cwd);
+    this.app.serviceOutput(this.terminalService, '[runScript]', 'spawning shell:', wrapped.command, ' ', wrapped.args.join(' '), 'in:', cwd);
 
     try {
       const result = await execa(wrapped.command, wrapped.args, {
@@ -185,7 +186,7 @@ export default class PosixTerminalProvider implements TerminalProvider {
     const shell = process.env.SHELL || '/bin/bash';
     const wrapped = this.wrapWithBubblewrap(shell, [], cwd);
 
-    this.app.serviceOutput('[startInteractiveSession]', id, 'spawning shell:', wrapped.command, 'args: ', wrapped.args.join(' '), 'in:', cwd);
+    this.app.serviceOutput(this.terminalService, '[startInteractiveSession]', id, 'spawning shell:', wrapped.command, 'args: ', wrapped.args.join(' '), 'in:', cwd);
     
     const ptyProcess = pty.spawn(wrapped.command, wrapped.args, {
       name: 'dumb',
@@ -200,7 +201,7 @@ export default class PosixTerminalProvider implements TerminalProvider {
       } as any,
     });
 
-    this.app.serviceOutput('[startInteractiveSession]', id, 'PTY spawned, pid:', ptyProcess.pid);
+    this.app.serviceOutput(this.terminalService, '[startInteractiveSession]', id, 'PTY spawned, pid:', ptyProcess.pid);
 
     const session: InteractiveTerminalSession = {
       id,
@@ -212,14 +213,14 @@ export default class PosixTerminalProvider implements TerminalProvider {
     };
 
     ptyProcess.onData((data) => {
-      this.app.serviceOutput('[PTY onData]', id, 'received:', data.length, 'bytes');
+      this.app.serviceOutput(this.terminalService, '[PTY onData]', id, 'received:', data.length, 'bytes');
       session.outputBuffer += data;
       session.lastOutputTime = Date.now();
-      this.app.serviceOutput('[PTY onData]', id, 'buffer now:', session.outputBuffer.length, 'bytes');
+      this.app.serviceOutput(this.terminalService, '[PTY onData]', id, 'buffer now:', session.outputBuffer.length, 'bytes');
     });
 
     ptyProcess.onExit(({exitCode}) => {
-      this.app.serviceOutput('[PTY onExit]', id, 'exitCode:', exitCode);
+      this.app.serviceOutput(this.terminalService, '[PTY onExit]', id, 'exitCode:', exitCode);
       session.exitCode = exitCode;
     });
 
@@ -228,14 +229,14 @@ export default class PosixTerminalProvider implements TerminalProvider {
     // Wait briefly for initial prompt to appear
     await new Promise(resolve => setTimeout(resolve, 100));
     
-    this.app.serviceOutput('[startInteractiveSession]', id, 'returning, buffer length:', session.outputBuffer.length);
+    this.app.serviceOutput(this.terminalService, '[startInteractiveSession]', id, 'returning, buffer length:', session.outputBuffer.length);
     return id;
   }
 
   async sendInput(sessionId: string, input: string): Promise<void> {
     const session = this.sessions.get(sessionId);
     if (!session) throw new Error(`Session ${sessionId} not found`);
-    this.app.serviceOutput('[sendInput]', sessionId, 'writing:', input);
+    this.app.serviceOutput(this.terminalService, '[sendInput]', sessionId, 'writing:', input);
     session.process.write(`${input}\n`);
   }
 
@@ -247,12 +248,12 @@ export default class PosixTerminalProvider implements TerminalProvider {
     const session = this.sessions.get(sessionId);
     if (!session) throw new Error(`Session ${sessionId} not found`);
 
-    this.app.serviceOutput('[collectOutput]', sessionId, 'from:', fromPosition, 'buffer length:', session.outputBuffer.length);
+    this.app.serviceOutput(this.terminalService, '[collectOutput]', sessionId, 'from:', fromPosition, 'buffer length:', session.outputBuffer.length);
     const output = session.outputBuffer.substring(fromPosition);
     const newPosition = session.outputBuffer.length;
     const isComplete = session.exitCode !== undefined;
 
-    this.app.serviceOutput('[collectOutput]', sessionId, 'output length:', output.length, 'new position:', newPosition);
+    this.app.serviceOutput(this.terminalService, '[collectOutput]', sessionId, 'output length:', output.length, 'new position:', newPosition);
     return {
       output,
       newPosition,
@@ -264,7 +265,7 @@ export default class PosixTerminalProvider implements TerminalProvider {
   async terminateSession(sessionId: string): Promise<void> {
     const session = this.sessions.get(sessionId);
     if (!session) return;
-    this.app.serviceOutput('[terminateSession]', sessionId, 'killing process');
+    this.app.serviceOutput(this.terminalService, '[terminateSession]', sessionId, 'killing process');
     session.process.kill();
     this.sessions.delete(sessionId);
   }
