@@ -32,29 +32,24 @@ export default class PosixTerminalProvider implements TerminalProvider {
 
   private sessions = new Map<string, InteractiveTerminalSession>();
   private nextId = 1;
-  private readonly isolationLevel: 'none' | 'bubblewrap';
+  private readonly isolationProvider: 'none' | 'bubblewrap' = "none";
+  displayName: string;
 
   constructor(readonly app: TokenRingApp, readonly terminalService: TerminalService, readonly options: LocalTerminalProviderOptions) {
     if (!fs.existsSync(options.workingDirectory)) {
       throw new Error(`Root directory ${options.workingDirectory} does not exist`);
     }
 
-    this.isolationLevel = this.resolveIsolation();
-
-    app.serviceOutput(terminalService, `Using isolation level: ${this.isolationLevel}`)
-  }
-
-  private resolveIsolation(): 'none' | 'bubblewrap' {
-    if (this.options.isolation === 'none') return 'none';
-    if (this.options.isolation === 'bubblewrap') return 'bubblewrap';
-    
-    // auto mode: check if bubblewrap exists
-    try {
-      execaSync('which', ['bwrap']);
-      return 'bubblewrap';
-    } catch {
-      return 'none';
+    if (this.options.isolation === 'bubblewrap') {
+      this.isolationProvider = 'bubblewrap';
+    } else if (this.options.isolation === 'auto') {
+      try {
+        execaSync('which', ['bwrap']);
+        this.isolationProvider = 'bubblewrap';
+      } catch {}
     }
+
+    this.displayName = `PosixTerminalProvider (${options.workingDirectory}, isolation: ${this.isolationProvider})`;
   }
 
   async executeCommand(
@@ -153,7 +148,7 @@ export default class PosixTerminalProvider implements TerminalProvider {
   }
 
   private wrapWithBubblewrap(command: string, args: string[], cwd: string): {command: string, args: string[]} {
-    if (this.isolationLevel !== 'bubblewrap') {
+    if (this.isolationProvider !== 'bubblewrap') {
       return {command, args};
     }
 
@@ -284,6 +279,6 @@ export default class PosixTerminalProvider implements TerminalProvider {
   }
 
   getIsolationLevel(): TerminalIsolationLevel {
-    return this.isolationLevel === 'bubblewrap' ? 'sandbox' : 'none';
+    return this.isolationProvider === 'bubblewrap' ? 'sandbox' : 'none';
   }
 }
