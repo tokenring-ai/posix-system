@@ -74,6 +74,7 @@ export default class PosixTerminalProvider implements TerminalProvider {
       return {
         status: "success",
         output: result.all?.trim() ?? "",
+        exitCode: 0
       };
     } catch (err: any) {
       if (err instanceof ExecaError) {
@@ -125,6 +126,7 @@ export default class PosixTerminalProvider implements TerminalProvider {
       return {
         status: "success",
         output: result.all?.trim() ?? "",
+        exitCode: 0
       };
     } catch (err: any) {
       if (err instanceof ExecaError) {
