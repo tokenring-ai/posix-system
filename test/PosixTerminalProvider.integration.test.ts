@@ -12,23 +12,27 @@ describe("PosixTerminalProvider Integration Tests", () => {
 
  beforeEach(() => {
   fs.ensureDirSync(testDir);
-  service = new PosixTerminalProvider({workingDirectory: testDir});
+  service = new PosixTerminalProvider({serviceOutput() {} } as any, {} as any, {isolation: "none"});
  });
 
 
  describe("Shell Commands", () => {
   it("should run shell commands", async () => {
    // Simple command test
-   const result = await service.runScript("echo hello",{ timeoutSeconds: 5});
-   expect(result.ok).toBe(true);
-   expect(result.stdout).toBe("hello");
+   const result = await service.runScript("echo hello",{ timeoutSeconds: 5, workingDirectory: testDir});
+   expect(result.status).toBe("success");
+   if (result.status === "success") {
+    expect(result.output).toBe("hello");
+   }
   });
 
   it("should handle command errors gracefully", async () => {
    // Command that should fail
-   const result = await service.runScript("false", { timeoutSeconds: 5 });
-   expect(result.ok).toBe(false);
-   expect(result.exitCode).toBe(1);
+   const result = await service.runScript("false", { timeoutSeconds: 5, workingDirectory: testDir });
+   expect(result.status).toBe("badExitCode");
+   if (result.status === "badExitCode") {
+    expect(result.exitCode).toBe(1);
+   }
   });
  });
 });

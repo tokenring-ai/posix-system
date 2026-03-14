@@ -10,103 +10,70 @@ import chokidar, {FSWatcher} from "chokidar";
 import fs from "fs-extra";
 import {glob} from "glob";
 import path from "node:path";
-import type {LocalFileSystemProviderOptions} from "./schema.ts";
+import type {PosixFileSystemProviderOptions} from "./schema.ts";
 
 export default class PosixFileSystemProvider implements FileSystemProvider {
   readonly name = "LocalFilesystemProvider";
   description = "Provides access to the local filesystem";
 
-  constructor(readonly options: LocalFileSystemProviderOptions) {
-    if (!fs.existsSync(options.workingDirectory)) {
-      throw new Error(`Root directory ${options.workingDirectory} does not exist`);
-    }
-  }
-  relativeOrAbsolutePathToAbsolutePath(p: string): string {
-    if (path.isAbsolute(p)) {
-      const relativePath = path.relative(this.options.workingDirectory, p);
-      if (relativePath.startsWith("..") || path.isAbsolute(relativePath)) {
-        throw new Error(`Path ${p} is outside the root directory`);
-      }
-      return p;
-    } else {
-      return path.resolve(this.options.workingDirectory, p);
-    }
-  }
-
-  relativeOrAbsolutePathToRelativePath(p: string): string {
-    return path.relative(this.options.workingDirectory, this.relativeOrAbsolutePathToAbsolutePath(p));
-  }
+  constructor(readonly options: PosixFileSystemProviderOptions = {}) {}
 
   async writeFile(filePath: string, content: string | Buffer): Promise<boolean> {
-    const absolutePath = this.relativeOrAbsolutePathToAbsolutePath(filePath);
-    await fs.ensureDir(path.dirname(absolutePath));
-    await fs.writeFile(absolutePath, content);
+    await fs.ensureDir(path.dirname(filePath));
+    await fs.writeFile(filePath, content);
     return true;
   }
 
   async appendFile(filePath: string, finalContent: string | Buffer): Promise<boolean> {
-    const absolutePath = this.relativeOrAbsolutePathToAbsolutePath(filePath);
-    await fs.ensureDir(path.dirname(absolutePath));
-    await fs.appendFile(absolutePath, finalContent);
+    await fs.ensureDir(path.dirname(filePath));
+    await fs.appendFile(filePath, finalContent);
     return true;
   }
 
   async deleteFile(filePath: string): Promise<boolean> {
-    const absolutePath = this.relativeOrAbsolutePathToAbsolutePath(filePath);
-    if (!(await fs.pathExists(absolutePath))) {
+    if (!(await fs.pathExists(filePath))) {
       throw new Error(`File ${filePath} does not exist`);
     }
-    const stats = await fs.stat(absolutePath);
+    const stats = await fs.stat(filePath);
     if (!stats.isFile()) {
       throw new Error(`Path ${filePath} is not a file`);
     }
-    await fs.remove(absolutePath);
+    await fs.remove(filePath);
     return true;
   }
 
 
   async readFile(filePath: string): Promise<Buffer|null> {
-    const absolutePath = this.relativeOrAbsolutePathToAbsolutePath(filePath);
     try {
-      return await fs.readFile(absolutePath);
+      return await fs.readFile(filePath);
     } catch (error) {
       return null;
     }
   }
 
   async rename(oldPath: string, newPath: string): Promise<boolean> {
-    const absoluteOldPath = this.relativeOrAbsolutePathToAbsolutePath(oldPath);
-    const absoluteNewPath = this.relativeOrAbsolutePathToAbsolutePath(newPath);
-
-    if (!(await fs.pathExists(absoluteOldPath))) {
+    if (!(await fs.pathExists(oldPath))) {
       throw new Error(`Path ${oldPath} does not exist`);
     }
-    if (await fs.pathExists(absoluteNewPath)) {
+    if (await fs.pathExists(newPath)) {
       throw new Error(`Path ${newPath} already exists`);
     }
-    await fs.ensureDir(path.dirname(absoluteNewPath));
-    await fs.rename(absoluteOldPath, absoluteNewPath);
+    await fs.ensureDir(path.dirname(newPath));
+    await fs.rename(oldPath, newPath);
     return true;
   }
 
   async exists(filePath: string): Promise<boolean> {
-    try {
-      const absolutePath = this.relativeOrAbsolutePathToAbsolutePath(filePath);
-      return fs.pathExists(absolutePath);
-    } catch (_error) {
-      return false;
-    }
+    return fs.pathExists(filePath);
   }
 
   async stat(filePath: string): Promise<StatLike> {
-    const absolutePath = this.relativeOrAbsolutePathToAbsolutePath(filePath);
-
     try {
-      const stats = await fs.stat(absolutePath);
+      const stats = await fs.stat(filePath);
       return {
         exists: true,
         path: filePath,
-        absolutePath: absolutePath,
+        absolutePath: filePath,
         isFile: stats.isFile(),
         isDirectory: stats.isDirectory(),
         isSymbolicLink: stats.isSymbolicLink(),
@@ -124,11 +91,10 @@ export default class PosixFileSystemProvider implements FileSystemProvider {
   }
 
   async createDirectory(dirPath: string, options: { recursive?: boolean } = {}): Promise<boolean> {
-    const absolutePath = this.relativeOrAbsolutePathToAbsolutePath(dirPath);
     const {recursive = false} = options;
 
-    if (await fs.pathExists(absolutePath)) {
-      const stats = await fs.stat(absolutePath);
+    if (await fs.pathExists(dirPath)) {
+      const stats = await fs.stat(dirPath);
       if (stats.isDirectory()) {
         return true;
       } else {
@@ -137,10 +103,10 @@ export default class PosixFileSystemProvider implements FileSystemProvider {
     }
 
     if (recursive) {
-      await fs.ensureDir(absolutePath);
+      await fs.ensureDir(dirPath);
     } else {
       try {
-        await fs.mkdir(absolutePath);
+        await fs.mkdir(dirPath);
       } catch (error: any) {
         if (error.code === "ENOENT") {
           throw new Error(`Parent directory for ${dirPath} does not exist`);
@@ -153,19 +119,17 @@ export default class PosixFileSystemProvider implements FileSystemProvider {
   }
 
   async copy(source: string, destination: string, options: { overwrite?: boolean } = {}): Promise<boolean> {
-    const absoluteSource = this.relativeOrAbsolutePathToAbsolutePath(source);
-    const absoluteDestination = this.relativeOrAbsolutePathToAbsolutePath(destination);
     const {overwrite = false} = options;
 
-    if (!(await fs.pathExists(absoluteSource))) {
+    if (!(await fs.pathExists(source))) {
       throw new Error(`Source path ${source} does not exist`);
     }
 
-    if (!overwrite && (await fs.pathExists(absoluteDestination))) {
+    if (!overwrite && (await fs.pathExists(destination))) {
       throw new Error(`Destination path ${destination} already exists`);
     }
 
-    await fs.copy(absoluteSource, absoluteDestination, {overwrite});
+    await fs.copy(source, destination, {overwrite});
     return true;
   }
 
@@ -173,10 +137,9 @@ export default class PosixFileSystemProvider implements FileSystemProvider {
     try {
       return glob
         .sync(pattern, {
-          cwd: this.options.workingDirectory,
           dot: true,
           nodir: !includeDirectories,
-          absolute: false,
+          absolute: true,
         })
         .filter((file) => {
           return !ignoreFilter(file);
@@ -190,28 +153,18 @@ export default class PosixFileSystemProvider implements FileSystemProvider {
     dir: string,
     {ignoreFilter, pollInterval = 1000, stabilityThreshold = 2000}: WatchOptions
   ): Promise<FSWatcher> {
-    const absolutePath = path.resolve(this.options.workingDirectory, dir);
-
-    if (!(await fs.pathExists(absolutePath))) {
+    if (!(await fs.pathExists(dir))) {
       throw new Error(`Directory ${dir} does not exist`);
     }
 
-    const cwd = path.relative(process.cwd(), this.options.workingDirectory);
-    return chokidar.watch("./", {
+    return chokidar.watch(dir, {
       ignored: (file: string) => {
-        if (file === "." || file === "./") return false;
-
-        if (file.startsWith("./")) {
-          file = file.substring(2);
-        }
-
         try {
           return ignoreFilter!(file);
         } catch (_error) {
           return true;
         }
       },
-      cwd: cwd,
       awaitWriteFinish: {
         stabilityThreshold,
         pollInterval,
@@ -220,18 +173,19 @@ export default class PosixFileSystemProvider implements FileSystemProvider {
   }
 
   async grep(
-    searchString: string,
+    searchString: string | string[],
     options: GrepOptions
   ): Promise<GrepResult[]> {
-    const {ignoreFilter, includeContent = {}} = options;
+    const {ignoreFilter, includeContent = {}, cwd = process.cwd()} = options;
     const {linesBefore = 0, linesAfter = 0} = includeContent;
+    const searchStrings = Array.isArray(searchString) ? searchString : [searchString];
 
-    if (!searchString) {
+    if (searchStrings.length === 0 || searchStrings.every((item) => !item)) {
       throw new Error("Search string is required");
     }
 
     const allFiles: string[] = [];
-    for await (const file of this.getDirectoryTree("", {ignoreFilter})) {
+    for await (const file of this.getDirectoryTree(cwd, {ignoreFilter})) {
       allFiles.push(file);
     }
 
@@ -248,7 +202,7 @@ export default class PosixFileSystemProvider implements FileSystemProvider {
         for (let lineNum = 0; lineNum < lines.length; lineNum++) {
           const line = lines[lineNum];
 
-          if (line.includes(searchString)) {
+          if (searchStrings.some((value) => value && line.includes(value))) {
             const startLine = Math.max(0, lineNum - linesBefore);
             const endLine = Math.min(lines.length - 1, lineNum + linesAfter);
 
@@ -277,23 +231,19 @@ export default class PosixFileSystemProvider implements FileSystemProvider {
     dir: string,
     {ignoreFilter, recursive = true}: DirectoryTreeOptions
   ): AsyncGenerator<string> {
-
-    const absoluteDir = path.resolve(this.options.workingDirectory, dir);
-    const items = await fs.readdir(absoluteDir, {withFileTypes: true});
+    const items = await fs.readdir(dir, {withFileTypes: true});
 
     for (const item of items) {
-      const itemPath = path.join(absoluteDir, item.name);
-      const relPath = path.relative(this.options.workingDirectory, itemPath);
-
-      if (ignoreFilter(relPath)) continue;
+      const itemPath = path.join(dir, item.name);
+      if (ignoreFilter(itemPath)) continue;
 
       if (item.isDirectory()) {
-        yield `${relPath}/`;
+        yield `${itemPath}/`;
         if (recursive) {
-          yield* this.getDirectoryTree(relPath, {ignoreFilter});
+          yield* this.getDirectoryTree(itemPath, {ignoreFilter});
         }
       } else {
-        yield relPath;
+        yield itemPath;
       }
     }
   }

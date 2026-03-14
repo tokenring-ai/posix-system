@@ -12,9 +12,7 @@ import {
 import formatLogMessages from "@tokenring-ai/utility/string/formatLogMessage";
 import * as pty from 'bun-pty';
 import {execa, ExecaError, execaSync} from "execa";
-import fs from "fs-extra";
-import path from "node:path";
-import {type LocalTerminalProviderOptions} from "./schema.ts";
+import {type PosixTerminalProviderOptions} from "./schema.ts";
 
 interface InteractiveTerminalSession {
   id: string;
@@ -35,11 +33,7 @@ export default class PosixTerminalProvider implements TerminalProvider {
   private readonly isolationProvider: 'none' | 'bubblewrap' = "none";
   displayName: string;
 
-  constructor(readonly app: TokenRingApp, readonly terminalService: TerminalService, readonly options: LocalTerminalProviderOptions) {
-    if (!fs.existsSync(options.workingDirectory)) {
-      throw new Error(`Root directory ${options.workingDirectory} does not exist`);
-    }
-
+  constructor(readonly app: TokenRingApp, readonly terminalService: TerminalService, readonly options: PosixTerminalProviderOptions) {
     if (this.options.isolation === 'bubblewrap') {
       this.isolationProvider = 'bubblewrap';
     } else if (this.options.isolation === 'auto') {
@@ -49,7 +43,7 @@ export default class PosixTerminalProvider implements TerminalProvider {
       } catch {}
     }
 
-    this.displayName = `PosixTerminalProvider (${options.workingDirectory}, isolation: ${this.isolationProvider})`;
+    this.displayName = `PosixTerminalProvider (isolation: ${this.isolationProvider})`;
   }
 
   async executeCommand(
@@ -57,8 +51,7 @@ export default class PosixTerminalProvider implements TerminalProvider {
     args: string[],
     options: ExecuteCommandOptions,
   ): Promise<ExecuteCommandResult> {
-    const {timeoutSeconds, env = {}, workingDirectory = "./"} = options;
-    const cwd = path.resolve(this.options.workingDirectory, workingDirectory);
+    const {timeoutSeconds, env = {}, workingDirectory: cwd} = options;
     const wrapped = this.wrapWithBubblewrap(command, args, cwd);
 
     try {
@@ -101,8 +94,7 @@ export default class PosixTerminalProvider implements TerminalProvider {
     script: string,
     options: ExecuteCommandOptions,
   ): Promise<ExecuteCommandResult> {
-    const {timeoutSeconds, env = {}, workingDirectory = "./"} = options;
-    const cwd = path.resolve(this.options.workingDirectory, workingDirectory);
+    const {timeoutSeconds, env = {}, workingDirectory: cwd} = options;
     const shell = process.env.SHELL || '/bin/bash';
     const wrapped = this.wrapWithBubblewrap(shell, ["-c", script], cwd);
 
@@ -178,7 +170,7 @@ export default class PosixTerminalProvider implements TerminalProvider {
 
   async startInteractiveSession(options: ExecuteCommandOptions): Promise<string> {
     const id = `term-${this.nextId++}`;
-    const cwd = path.resolve(this.options.workingDirectory, options.workingDirectory || "./");
+    const cwd = options.workingDirectory;
 
     const shell = process.env.SHELL || '/bin/bash';
     const wrapped = this.wrapWithBubblewrap(shell, [], cwd);

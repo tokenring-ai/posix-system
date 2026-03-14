@@ -8,7 +8,7 @@ describe("PosixTerminalProvider Persistent Sessions", () => {
 
   beforeEach(() => {
     fs.ensureDirSync(testDir);
-    provider = new PosixTerminalProvider({workingDirectory: testDir});
+    provider = new PosixTerminalProvider({serviceOutput() {} } as any, {} as any, {isolation: "none"});
   });
 
   afterEach(() => {
@@ -19,8 +19,9 @@ describe("PosixTerminalProvider Persistent Sessions", () => {
 
   it("should start and interact with a persistent session", async () => {
     // Start a session
-    const sessionId = await provider.startPersistentSession("bash", [], {
+    const sessionId = await provider.startInteractiveSession({
       timeoutSeconds: 0,
+      workingDirectory: testDir,
     });
 
     expect(sessionId).toMatch(/^term-\d+$/);
@@ -31,7 +32,7 @@ describe("PosixTerminalProvider Persistent Sessions", () => {
     expect(status?.running).toBe(true);
 
     // Send a command
-    await provider.sendInput(sessionId, "echo hello\n");
+    await provider.sendInput(sessionId, "echo hello");
 
     // Wait a bit for output
     await new Promise(resolve => setTimeout(resolve, 100));
@@ -55,12 +56,14 @@ describe("PosixTerminalProvider Persistent Sessions", () => {
   });
 
   it("should handle multiple concurrent sessions", async () => {
-    const session1 = await provider.startPersistentSession("bash", [], {
+    const session1 = await provider.startInteractiveSession({
       timeoutSeconds: 0,
+      workingDirectory: testDir,
     });
 
-    const session2 = await provider.startPersistentSession("bash", [], {
+    const session2 = await provider.startInteractiveSession({
       timeoutSeconds: 0,
+      workingDirectory: testDir,
     });
 
     expect(session1).not.toBe(session2);
@@ -76,11 +79,12 @@ describe("PosixTerminalProvider Persistent Sessions", () => {
   });
 
   it("should track output position correctly", async () => {
-    const sessionId = await provider.startPersistentSession("bash", [], {
+    const sessionId = await provider.startInteractiveSession({
       timeoutSeconds: 0,
+      workingDirectory: testDir,
     });
 
-    await provider.sendInput(sessionId, "echo first\n");
+    await provider.sendInput(sessionId, "echo first");
     await new Promise(resolve => setTimeout(resolve, 100));
 
     const output1 = await provider.collectOutput(sessionId, 0, {
@@ -92,7 +96,7 @@ describe("PosixTerminalProvider Persistent Sessions", () => {
     expect(output1.output).toContain("first");
     const pos1 = output1.newPosition;
 
-    await provider.sendInput(sessionId, "echo second\n");
+    await provider.sendInput(sessionId, "echo second");
     await new Promise(resolve => setTimeout(resolve, 100));
 
     const output2 = await provider.collectOutput(sessionId, pos1, {

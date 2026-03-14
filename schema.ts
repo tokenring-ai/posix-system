@@ -1,14 +1,11 @@
 import {z} from "zod";
 
-export const LocalFileSystemProviderOptionsSchema = z.object({
-  workingDirectory: z.string(),
-  defaultSelectedFiles: z.array(z.string()).optional(),
+export const PosixFileSystemProviderOptionsSchema = z.object({
 });
-export type LocalFileSystemProviderOptions = z.output<typeof LocalFileSystemProviderOptionsSchema>;
+export type PosixFileSystemProviderOptions = z.output<typeof PosixFileSystemProviderOptionsSchema>;
 
-export const LocalTerminalProviderOptionsSchema = z.object({
-  workingDirectory: z.string(),
+export const PosixTerminalProviderOptionsSchema = z.object({
   isolation: z.enum(['auto', 'none', 'bubblewrap']).default('auto'),
 });
 
-export type LocalTerminalProviderOptions = z.output<typeof LocalTerminalProviderOptionsSchema>;
+export type PosixTerminalProviderOptions = z.output<typeof PosixTerminalProviderOptionsSchema>;
