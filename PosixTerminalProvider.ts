@@ -140,12 +140,12 @@ export default class PosixTerminalProvider implements TerminalProvider {
       };
     }
   }
-
   private wrapWithBubblewrap(command: string, args: string[], cwd: string): {command: string, args: string[]} {
     if (this.isolationProvider !== 'bubblewrap') {
       return {command, args};
     }
 
+    const homeDir = process.env.HOME || '/home/' + process.env.USER;
     const bwrapArgs = [
       '--ro-bind', '/usr', '/usr',
       '--ro-bind', '/lib', '/lib',
@@ -153,6 +153,7 @@ export default class PosixTerminalProvider implements TerminalProvider {
       '--ro-bind', '/bin', '/bin',
       '--ro-bind', '/sbin', '/sbin',
       '--ro-bind', '/etc', '/etc',
+      '--ro-bind', homeDir, homeDir,
       '--proc', '/proc',
       '--dev', '/dev',
       '--tmpfs', '/tmp',
