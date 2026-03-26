@@ -4,8 +4,8 @@ import {FileSystemConfigSchema} from "@tokenring-ai/filesystem/schema";
 import {TerminalConfigSchema} from "@tokenring-ai/terminal/schema";
 import TerminalService from "@tokenring-ai/terminal/TerminalService";
 import {z} from "zod";
-import PosixFileSystemProvider from "./PosixFileSystemProvider.js";
-import PosixTerminalProvider from "./PosixTerminalProvider.js";
+import PosixFileSystemProvider from "./PosixFileSystemProvider.ts";
+import PosixTerminalProvider from "./PosixTerminalProvider.ts";
 import packageJSON from './package.json' with {type: 'json'};
 import {PosixFileSystemProviderOptionsSchema, PosixTerminalProviderOptionsSchema} from "./schema.ts";
 
