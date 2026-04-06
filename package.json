@@ -1,7 +1,7 @@
 {
   "name": "@tokenring-ai/posix-system",
   "version": "0.2.0",
-  "description": "A POSIX system package for TokenRing apps, providing Terminal, Filesystem, and other POSIX-related utilities",
+  "description": "Low-level system utilities for Unix-like environments, including process and signal management.",
   "dependencies": {
     "@tokenring-ai/app": "0.2.0",
     "@tokenring-ai/chat": "0.2.0",
