@@ -4,10 +4,10 @@ import {
   type ExecuteCommandOptions,
   type ExecuteCommandResult,
   type InteractiveTerminalOutput,
+  type InteractiveTerminalProvider,
   type OutputWaitOptions,
   type SessionStatus,
   type TerminalIsolationLevel,
-  type TerminalProvider,
 } from "@tokenring-ai/terminal/TerminalProvider";
 import formatLogMessages from "@tokenring-ai/utility/string/formatLogMessage";
 import * as pty from 'bun-pty';
@@ -24,26 +24,37 @@ interface InteractiveTerminalSession {
   exitCode?: number;
 }
 
-export default class PosixTerminalProvider implements TerminalProvider {
+export default class PosixTerminalProvider implements InteractiveTerminalProvider {
+  readonly isInteractive = true;
   readonly name = "PosixTerminalProvider";
   description = "Provides shell command execution on local system";
 
   private sessions = new Map<string, InteractiveTerminalSession>();
   private nextId = 1;
-  private readonly isolationProvider: 'none' | 'bubblewrap' = "none";
+  supportedIsolationLevels: TerminalIsolationLevel[] = ['none'];
+
   displayName: string;
+  private readonly sandboxProvider: 'none' | 'bubblewrap' = "none";
 
   constructor(readonly app: TokenRingApp, readonly terminalService: TerminalService, readonly options: PosixTerminalProviderOptions) {
-    if (this.options.isolation === 'bubblewrap') {
-      this.isolationProvider = 'bubblewrap';
-    } else if (this.options.isolation === 'auto') {
+    if (options.sandboxProvider === 'bubblewrap') {
       try {
         execaSync('which', ['bwrap']);
-        this.isolationProvider = 'bubblewrap';
+        this.supportedIsolationLevels.push("sandbox");
+        this.sandboxProvider = 'bubblewrap';
+      } catch (err) {
+        throw new Error('bubblewrap was set as the sandbox provider, but is not installed', {cause: err});
+      }
+    }
+    if (options.sandboxProvider === 'auto') {
+      try {
+        execaSync('which', ['bwrap']);
+        this.supportedIsolationLevels.push("sandbox");
+        this.sandboxProvider = 'bubblewrap';
       } catch {}
     }
 
-    this.displayName = `PosixTerminalProvider (isolation: ${this.isolationProvider})`;
+    this.displayName = `PosixTerminalProvider (sandboxProvider: ${this.sandboxProvider})`;
   }
 
   async executeCommand(
@@ -51,13 +62,13 @@ export default class PosixTerminalProvider implements TerminalProvider {
     args: string[],
     options: ExecuteCommandOptions,
   ): Promise<ExecuteCommandResult> {
-    const {timeoutSeconds, env = {}, workingDirectory: cwd} = options;
-    const wrapped = this.wrapWithBubblewrap(command, args, cwd);
+    const {timeoutSeconds, workingDirectory: cwd} = options;
+    const wrapped = this.wrapWithIsolation(command, args, options);
 
     try {
       const result = await execa(wrapped.command, wrapped.args, {
         cwd,
-        env: {...process.env, ...env},
+        env: process.env,
         timeout: timeoutSeconds * 1000,
         maxBuffer: 1024 * 1024,
         stdin: "ignore",
@@ -94,9 +105,9 @@ export default class PosixTerminalProvider implements TerminalProvider {
     script: string,
     options: ExecuteCommandOptions,
   ): Promise<ExecuteCommandResult> {
-    const {timeoutSeconds, env = {}, workingDirectory: cwd} = options;
+    const {timeoutSeconds, workingDirectory: cwd} = options;
     const shell = process.env.SHELL || '/bin/bash';
-    const wrapped = this.wrapWithBubblewrap(shell, ["-c", script], cwd);
+    const wrapped = this.wrapWithIsolation(shell, ["-c", script], options);
 
     this.app.serviceOutput(this.terminalService, '[runScript]', 'spawning shell:', wrapped.command, ' ', wrapped.args.join(' '), 'in:', cwd);
 
@@ -107,7 +118,6 @@ export default class PosixTerminalProvider implements TerminalProvider {
           ...process.env,
           TERM: 'dumb',
           NO_COLOR: '1',
-          ...env
         },
         timeout: timeoutSeconds * 1000,
         maxBuffer: 1024 * 1024,
@@ -140,44 +150,16 @@ export default class PosixTerminalProvider implements TerminalProvider {
       };
     }
   }
-  private wrapWithBubblewrap(command: string, args: string[], cwd: string): {command: string, args: string[]} {
-    if (this.isolationProvider !== 'bubblewrap') {
-      return {command, args};
-    }
-
-    const homeDir = process.env.HOME || '/home/' + process.env.USER;
-    const bwrapArgs = [
-      '--ro-bind', '/usr', '/usr',
-      '--ro-bind', '/lib', '/lib',
-      '--ro-bind', '/lib64', '/lib64',
-      '--ro-bind', '/bin', '/bin',
-      '--ro-bind', '/sbin', '/sbin',
-      '--ro-bind', '/etc', '/etc',
-      '--ro-bind', homeDir, homeDir,
-      '--proc', '/proc',
-      '--dev', '/dev',
-      '--tmpfs', '/tmp',
-      '--bind', cwd, cwd,
-      '--chdir', cwd,
-      '--unshare-all',
-      '--share-net',
-      '--die-with-parent',
-      command,
-      ...args,
-    ];
-
-    return {command: 'bwrap', args: bwrapArgs};
-  }
 
   async startInteractiveSession(options: ExecuteCommandOptions): Promise<string> {
     const id = `term-${this.nextId++}`;
     const cwd = options.workingDirectory;
 
     const shell = process.env.SHELL || '/bin/bash';
-    const wrapped = this.wrapWithBubblewrap(shell, [], cwd);
+    const wrapped = this.wrapWithIsolation(shell, [], options);
 
     this.app.serviceOutput(this.terminalService, '[startInteractiveSession]', id, 'spawning shell:', wrapped.command, 'args: ', wrapped.args.join(' '), 'in:', cwd);
-    
+
     const ptyProcess = pty.spawn(wrapped.command, wrapped.args, {
       name: 'dumb',
       cols: 80,
@@ -185,7 +167,6 @@ export default class PosixTerminalProvider implements TerminalProvider {
       cwd,
       env: {
         ...process.env,
-        ...options.env,
         TERM: 'dumb',
         NO_COLOR: '1'
       } as any,
@@ -215,12 +196,16 @@ export default class PosixTerminalProvider implements TerminalProvider {
     });
 
     this.sessions.set(id, session);
-    
+
     // Wait briefly for initial prompt to appear
     await new Promise(resolve => setTimeout(resolve, 100));
-    
+
     this.app.serviceOutput(this.terminalService, '[startInteractiveSession]', id, 'returning, buffer length:', session.outputBuffer.length);
     return id;
+  }
+
+  getSupportedIsolationLevels(): TerminalIsolationLevel[] {
+    return this.supportedIsolationLevels;
   }
 
   async sendInput(sessionId: string, input: string): Promise<void> {
@@ -273,7 +258,36 @@ export default class PosixTerminalProvider implements TerminalProvider {
     };
   }
 
-  getIsolationLevel(): TerminalIsolationLevel {
-    return this.isolationProvider === 'bubblewrap' ? 'sandbox' : 'none';
+  private wrapWithIsolation(command: string, args: string[], options: ExecuteCommandOptions): { command: string, args: string[] } {
+    const isolationLevel = options.isolation ?? this.supportedIsolationLevels.includes('sandbox') ? 'sandbox' : 'none';
+    if (isolationLevel === 'none') {
+      return {command, args};
+    }
+
+    const cwd = options.workingDirectory;
+
+    const homeDir = process.env.HOME || '/home/' + process.env.USER;
+    const bwrapArgs = [
+      '--ro-bind', '/etc', '/etc',
+      '--ro-bind', '/usr', '/usr',
+      '--ro-bind', '/lib', '/lib',
+      '--ro-bind', '/lib64', '/lib64',
+      '--ro-bind', '/bin', '/bin',
+      '--ro-bind', '/sbin', '/sbin',
+      '--ro-bind', '/etc', '/etc',
+      //'--ro-bind', homeDir, homeDir,
+      '--proc', '/proc',
+      '--dev', '/dev',
+      '--tmpfs', '/tmp',
+      '--bind', cwd, cwd,
+      '--chdir', cwd,
+      '--unshare-all',
+      '--share-net',
+      '--die-with-parent',
+      command,
+      ...args,
+    ];
+
+    return {command: 'bwrap', args: bwrapArgs};
   }
 }
