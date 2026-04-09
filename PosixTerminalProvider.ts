@@ -204,10 +204,6 @@ export default class PosixTerminalProvider implements InteractiveTerminalProvide
     return id;
   }
 
-  getSupportedIsolationLevels(): TerminalIsolationLevel[] {
-    return this.supportedIsolationLevels;
-  }
-
   async sendInput(sessionId: string, input: string): Promise<void> {
     const session = this.sessions.get(sessionId);
     if (!session) throw new Error(`Session ${sessionId} not found`);
@@ -259,7 +255,7 @@ export default class PosixTerminalProvider implements InteractiveTerminalProvide
   }
 
   private wrapWithIsolation(command: string, args: string[], options: ExecuteCommandOptions): { command: string, args: string[] } {
-    const isolationLevel = options.isolation ?? this.supportedIsolationLevels.includes('sandbox') ? 'sandbox' : 'none';
+    const isolationLevel = options.isolation;
     if (isolationLevel === 'none') {
       return {command, args};
     }
@@ -275,7 +271,7 @@ export default class PosixTerminalProvider implements InteractiveTerminalProvide
       '--ro-bind', '/bin', '/bin',
       '--ro-bind', '/sbin', '/sbin',
       '--ro-bind', '/etc', '/etc',
-      //'--ro-bind', homeDir, homeDir,
+      '--ro-bind', homeDir, homeDir,
       '--proc', '/proc',
       '--dev', '/dev',
       '--tmpfs', '/tmp',
