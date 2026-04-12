@@ -4,18 +4,14 @@
   "description": "Low-level system utilities for Unix-like environments, including process and signal management.",
   "dependencies": {
     "@tokenring-ai/app": "0.2.0",
-    "@tokenring-ai/chat": "0.2.0",
-    "@tokenring-ai/terminal": "0.2.0",
-    "zod": "^4.3.6",
-    "@tokenring-ai/agent": "0.2.0",
     "@tokenring-ai/filesystem": "0.2.0",
+    "@tokenring-ai/terminal": "0.2.0",
     "@tokenring-ai/utility": "0.2.0",
+    "bun-pty": "^0.4.8",
     "chokidar": "^5.0.0",
     "execa": "^9.6.1",
     "fs-extra": "^11.3.4",
-    "glob": "^13.0.6",
-    "glob-gitignore": "^1.0.15",
-    "bun-pty": "^0.4.8"
+    "zod": "^4.3.6"
   },
   "devDependencies": {
     "@types/fs-extra": "^11.0.4",
