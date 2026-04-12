@@ -120,6 +120,7 @@ The `PosixTerminalProvider` provides shell command execution with configurable i
 **Bubblewrap Sandboxing Details:**
 
 When bubblewrap is enabled, the sandbox provides:
+
 - Read-only access to system directories (`/usr`, `/lib`, `/lib64`, `/bin`, `/sbin`, `/etc`)
 - Read-write access only to the current working directory
 - Temporary `/tmp` directory (tmpfs)
