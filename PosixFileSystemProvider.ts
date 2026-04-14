@@ -241,7 +241,7 @@ export default class PosixFileSystemProvider implements FileSystemProvider {
             });
           }
         }
-      } catch (_error) {
+      } catch {
         // Ignore files that cannot be read due to permissions or transient errors
       }
     }

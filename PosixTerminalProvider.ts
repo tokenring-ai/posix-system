@@ -48,7 +48,7 @@ export default class PosixTerminalProvider
         execaSync("which", ["bwrap"]);
         this.supportedIsolationLevels.push("sandbox");
         this.sandboxProvider = "bubblewrap";
-      } catch (err) {
+      } catch (err: unknown) {
         throw new Error(
           "bubblewrap was set as the sandbox provider, but is not installed",
           {cause: err},
