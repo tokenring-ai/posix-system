@@ -195,7 +195,7 @@ export default class PosixFileSystemProvider implements FileSystemProvider {
       ? searchString
       : [searchString];
 
-    if (searchStrings.length === 0 || searchStrings.every((item) => !item)) {
+    if (searchStrings.every((item) => !item)) {
       throw new Error("Search string is required");
     }
 
