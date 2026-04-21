@@ -200,7 +200,7 @@ export default class PosixTerminalProvider
         ...process.env,
         TERM: "dumb",
         NO_COLOR: "1",
-      } as any,
+      },
     });
 
     this.app.serviceOutput(
@@ -351,7 +351,7 @@ export default class PosixTerminalProvider
   ): { command: string; args: string[] } {
     const isolationLevel = options.isolation;
     if (isolationLevel === "none") {
-      return {command, args};
+      return {command: command, args};
     }
 
     const cwd = options.workingDirectory;

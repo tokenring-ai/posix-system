@@ -7,6 +7,7 @@ import type {
   StatLike,
   WatchOptions,
 } from "@tokenring-ai/filesystem/FileSystemProvider";
+import {arrayableToArray} from "@tokenring-ai/utility/array/arrayable";
 import {Glob} from "bun";
 import chokidar, {type FSWatcher} from "chokidar";
 import fs from "fs-extra";
@@ -191,9 +192,7 @@ export default class PosixFileSystemProvider implements FileSystemProvider {
   ): Promise<GrepResult[]> {
     const {ignoreFilter, includeContent = {}, cwd = process.cwd()} = options;
     const {linesBefore = 0, linesAfter = 0} = includeContent;
-    const searchStrings = Array.isArray(searchString)
-      ? searchString
-      : [searchString];
+    const searchStrings = arrayableToArray(searchString);
 
     if (searchStrings.every((item) => !item)) {
       throw new Error("Search string is required");
