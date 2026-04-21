@@ -1,3 +1,4 @@
+import path from "node:path";
 import type {
   DirectoryTreeOptions,
   FileSystemProvider,
@@ -7,33 +8,25 @@ import type {
   StatLike,
   WatchOptions,
 } from "@tokenring-ai/filesystem/FileSystemProvider";
-import {arrayableToArray} from "@tokenring-ai/utility/array/arrayable";
-import {Glob} from "bun";
-import chokidar, {type FSWatcher} from "chokidar";
+import { arrayableToArray } from "@tokenring-ai/utility/array/arrayable";
+import { Glob } from "bun";
+import chokidar, { type FSWatcher } from "chokidar";
 import fs from "fs-extra";
-import path from "node:path";
-import type {PosixFileSystemProviderOptions} from "./schema.ts";
+import type { PosixFileSystemProviderOptions } from "./schema.ts";
 
 export default class PosixFileSystemProvider implements FileSystemProvider {
   readonly name = "LocalFilesystemProvider";
   description = "Provides access to the local filesystem";
 
-  constructor(readonly options: PosixFileSystemProviderOptions = {}) {
-  }
+  constructor(readonly options: PosixFileSystemProviderOptions = {}) {}
 
-  async writeFile(
-    filePath: string,
-    content: string | Buffer,
-  ): Promise<boolean> {
+  async writeFile(filePath: string, content: string | Buffer): Promise<boolean> {
     await fs.ensureDir(path.dirname(filePath));
     await fs.writeFile(filePath, content);
     return true;
   }
 
-  async appendFile(
-    filePath: string,
-    finalContent: string | Buffer,
-  ): Promise<boolean> {
+  async appendFile(filePath: string, finalContent: string | Buffer): Promise<boolean> {
     await fs.ensureDir(path.dirname(filePath));
     await fs.appendFile(filePath, finalContent);
     return true;
@@ -98,11 +91,8 @@ export default class PosixFileSystemProvider implements FileSystemProvider {
     }
   }
 
-  async createDirectory(
-    dirPath: string,
-    options: { recursive?: boolean } = {},
-  ): Promise<boolean> {
-    const {recursive = false} = options;
+  async createDirectory(dirPath: string, options: { recursive?: boolean | undefined } = {}): Promise<boolean> {
+    const { recursive = false } = options;
 
     if (await fs.pathExists(dirPath)) {
       const stats = await fs.stat(dirPath);
@@ -129,12 +119,8 @@ export default class PosixFileSystemProvider implements FileSystemProvider {
     return true;
   }
 
-  async copy(
-    source: string,
-    destination: string,
-    options: { overwrite?: boolean } = {},
-  ): Promise<boolean> {
-    const {overwrite = false} = options;
+  async copy(source: string, destination: string, options: { overwrite?: boolean | undefined } = {}): Promise<boolean> {
+    const { overwrite = false } = options;
 
     if (!(await fs.pathExists(source))) {
       throw new Error(`Source path ${source} does not exist`);
@@ -144,29 +130,19 @@ export default class PosixFileSystemProvider implements FileSystemProvider {
       throw new Error(`Destination path ${destination} already exists`);
     }
 
-    await fs.copy(source, destination, {overwrite});
+    await fs.copy(source, destination, { overwrite });
     return true;
   }
 
-  async glob(
-    pattern: string,
-    {ignoreFilter, includeDirectories = false}: GlobOptions,
-  ): Promise<string[]> {
+  async glob(pattern: string, { ignoreFilter, includeDirectories = false }: GlobOptions): Promise<string[]> {
     const glob = new Glob(pattern);
 
-    const files = await Array.fromAsync(glob.scan({dot: true, onlyFiles: !includeDirectories, absolute: true}));
+    const files = await Array.fromAsync(glob.scan({ dot: true, onlyFiles: !includeDirectories, absolute: true }));
 
-    return files.filter((file) => !ignoreFilter(file));
+    return files.filter(file => !ignoreFilter(file));
   }
 
-  async watch(
-    dir: string,
-    {
-      ignoreFilter,
-      pollInterval = 1000,
-      stabilityThreshold = 2000,
-    }: WatchOptions,
-  ): Promise<FSWatcher> {
+  async watch(dir: string, { ignoreFilter, pollInterval = 1000, stabilityThreshold = 2000 }: WatchOptions): Promise<FSWatcher> {
     if (!(await fs.pathExists(dir))) {
       throw new Error(`Directory ${dir} does not exist`);
     }
@@ -186,26 +162,21 @@ export default class PosixFileSystemProvider implements FileSystemProvider {
     });
   }
 
-  async grep(
-    searchString: string | string[],
-    options: GrepOptions,
-  ): Promise<GrepResult[]> {
-    const {ignoreFilter, includeContent = {}, cwd = process.cwd()} = options;
-    const {linesBefore = 0, linesAfter = 0} = includeContent;
+  async grep(searchString: string | string[], options: GrepOptions): Promise<GrepResult[]> {
+    const { ignoreFilter, includeContent = {}, cwd = process.cwd() } = options;
+    const { linesBefore = 0, linesAfter = 0 } = includeContent;
     const searchStrings = arrayableToArray(searchString);
 
-    if (searchStrings.every((item) => !item)) {
+    if (searchStrings.every(item => !item)) {
       throw new Error("Search string is required");
     }
 
     const allFiles: string[] = [];
-    for await (const file of this.getDirectoryTree(cwd, {ignoreFilter})) {
+    for await (const file of this.getDirectoryTree(cwd, { ignoreFilter })) {
       allFiles.push(file);
     }
 
-    const filesToSearch = ignoreFilter
-      ? allFiles.filter((file) => !ignoreFilter(file))
-      : allFiles;
+    const filesToSearch = ignoreFilter ? allFiles.filter(file => !ignoreFilter(file)) : allFiles;
 
     const results: Array<{
       file: string;
@@ -223,7 +194,7 @@ export default class PosixFileSystemProvider implements FileSystemProvider {
         for (let lineNum = 0; lineNum < lines.length; lineNum++) {
           const line = lines[lineNum];
 
-          if (searchStrings.some((value) => value && line.includes(value))) {
+          if (searchStrings.some(value => value && line.includes(value))) {
             const startLine = Math.max(0, lineNum - linesBefore);
             const endLine = Math.min(lines.length - 1, lineNum + linesAfter);
 
@@ -248,11 +219,8 @@ export default class PosixFileSystemProvider implements FileSystemProvider {
     return results;
   }
 
-  async* getDirectoryTree(
-    dir: string,
-    {ignoreFilter, recursive = true}: DirectoryTreeOptions,
-  ): AsyncGenerator<string> {
-    const items = await fs.readdir(dir, {withFileTypes: true});
+  async *getDirectoryTree(dir: string, { ignoreFilter, recursive = true }: DirectoryTreeOptions): AsyncGenerator<string> {
+    const items = await fs.readdir(dir, { withFileTypes: true });
 
     for (const item of items) {
       const itemPath = path.join(dir, item.name);
@@ -261,7 +229,7 @@ export default class PosixFileSystemProvider implements FileSystemProvider {
       if (item.isDirectory()) {
         yield `${itemPath}/`;
         if (recursive) {
-          yield* this.getDirectoryTree(itemPath, {ignoreFilter});
+          yield* this.getDirectoryTree(itemPath, { ignoreFilter });
         }
       } else {
         yield itemPath;

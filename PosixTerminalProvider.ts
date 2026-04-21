@@ -1,5 +1,6 @@
+import { setTimeout as delay } from "node:timers/promises";
 import type TokenRingApp from "@tokenring-ai/app";
-import type {TerminalService} from "@tokenring-ai/terminal";
+import type { TerminalService } from "@tokenring-ai/terminal";
 import type {
   ExecuteCommandOptions,
   ExecuteCommandResult,
@@ -11,9 +12,8 @@ import type {
 } from "@tokenring-ai/terminal/TerminalProvider";
 import formatLogMessages from "@tokenring-ai/utility/string/formatLogMessage";
 import * as pty from "bun-pty";
-import {execa, ExecaError, execaSync} from "execa";
-import {setTimeout as delay} from "node:timers/promises";
-import type {PosixTerminalProviderOptions} from "./schema.ts";
+import { ExecaError, execa, execaSync } from "execa";
+import type { PosixTerminalProviderOptions } from "./schema.ts";
 
 interface InteractiveTerminalSession {
   id: string;
@@ -22,11 +22,10 @@ interface InteractiveTerminalSession {
   lastReadPosition: number;
   startTime: number;
   lastOutputTime: number;
-  exitCode?: number;
+  exitCode?: number | undefined;
 }
 
-export default class PosixTerminalProvider
-  implements InteractiveTerminalProvider {
+export default class PosixTerminalProvider implements InteractiveTerminalProvider {
   readonly isInteractive = true;
   readonly name = "PosixTerminalProvider";
   description = "Provides shell command execution on local system";
@@ -49,10 +48,7 @@ export default class PosixTerminalProvider
         this.supportedIsolationLevels.push("sandbox");
         this.sandboxProvider = "bubblewrap";
       } catch (err: unknown) {
-        throw new Error(
-          "bubblewrap was set as the sandbox provider, but is not installed",
-          {cause: err},
-        );
+        throw new Error("bubblewrap was set as the sandbox provider, but is not installed", { cause: err });
       }
     }
     if (options.sandboxProvider === "auto") {
@@ -60,19 +56,14 @@ export default class PosixTerminalProvider
         execaSync("which", ["bwrap"]);
         this.supportedIsolationLevels.push("sandbox");
         this.sandboxProvider = "bubblewrap";
-      } catch {
-      }
+      } catch {}
     }
 
     this.displayName = `PosixTerminalProvider (sandboxProvider: ${this.sandboxProvider})`;
   }
 
-  async executeCommand(
-    command: string,
-    args: string[],
-    options: ExecuteCommandOptions,
-  ): Promise<ExecuteCommandResult> {
-    const {timeoutSeconds, workingDirectory: cwd} = options;
+  async executeCommand(command: string, args: string[], options: ExecuteCommandOptions): Promise<ExecuteCommandResult> {
+    const { timeoutSeconds, workingDirectory: cwd } = options;
     const wrapped = this.wrapWithIsolation(command, args, options);
 
     try {
@@ -111,24 +102,12 @@ export default class PosixTerminalProvider
     }
   }
 
-  async runScript(
-    script: string,
-    options: ExecuteCommandOptions,
-  ): Promise<ExecuteCommandResult> {
-    const {timeoutSeconds, workingDirectory: cwd} = options;
+  async runScript(script: string, options: ExecuteCommandOptions): Promise<ExecuteCommandResult> {
+    const { timeoutSeconds, workingDirectory: cwd } = options;
     const shell = process.env.SHELL || "/bin/bash";
     const wrapped = this.wrapWithIsolation(shell, ["-c", script], options);
 
-    this.app.serviceOutput(
-      this.terminalService,
-      "[runScript]",
-      "spawning shell:",
-      wrapped.command,
-      " ",
-      wrapped.args.join(" "),
-      "in:",
-      cwd,
-    );
+    this.app.serviceOutput(this.terminalService, "[runScript]", "spawning shell:", wrapped.command, " ", wrapped.args.join(" "), "in:", cwd);
 
     try {
       const result = await execa(wrapped.command, wrapped.args, {
@@ -170,9 +149,7 @@ export default class PosixTerminalProvider
     }
   }
 
-  async startInteractiveSession(
-    options: ExecuteCommandOptions,
-  ): Promise<string> {
+  async startInteractiveSession(options: ExecuteCommandOptions): Promise<string> {
     const id = `term-${this.nextId++}`;
     const cwd = options.workingDirectory;
 
@@ -203,13 +180,7 @@ export default class PosixTerminalProvider
       },
     });
 
-    this.app.serviceOutput(
-      this.terminalService,
-      "[startInteractiveSession]",
-      id,
-      "PTY spawned, pid:",
-      ptyProcess.pid,
-    );
+    this.app.serviceOutput(this.terminalService, "[startInteractiveSession]", id, "PTY spawned, pid:", ptyProcess.pid);
 
     const session: InteractiveTerminalSession = {
       id,
@@ -220,35 +191,15 @@ export default class PosixTerminalProvider
       lastOutputTime: Date.now(),
     };
 
-    ptyProcess.onData((data) => {
-      this.app.serviceOutput(
-        this.terminalService,
-        "[PTY onData]",
-        id,
-        "received:",
-        data.length,
-        "bytes",
-      );
+    ptyProcess.onData(data => {
+      this.app.serviceOutput(this.terminalService, "[PTY onData]", id, "received:", data.length, "bytes");
       session.outputBuffer += data;
       session.lastOutputTime = Date.now();
-      this.app.serviceOutput(
-        this.terminalService,
-        "[PTY onData]",
-        id,
-        "buffer now:",
-        session.outputBuffer.length,
-        "bytes",
-      );
+      this.app.serviceOutput(this.terminalService, "[PTY onData]", id, "buffer now:", session.outputBuffer.length, "bytes");
     });
 
-    ptyProcess.onExit(({exitCode}) => {
-      this.app.serviceOutput(
-        this.terminalService,
-        "[PTY onExit]",
-        id,
-        "exitCode:",
-        exitCode,
-      );
+    ptyProcess.onExit(({ exitCode }) => {
+      this.app.serviceOutput(this.terminalService, "[PTY onExit]", id, "exitCode:", exitCode);
       session.exitCode = exitCode;
     });
 
@@ -257,59 +208,27 @@ export default class PosixTerminalProvider
     // Wait briefly for initial prompt to appear
     await delay(100);
 
-    this.app.serviceOutput(
-      this.terminalService,
-      "[startInteractiveSession]",
-      id,
-      "returning, buffer length:",
-      session.outputBuffer.length,
-    );
+    this.app.serviceOutput(this.terminalService, "[startInteractiveSession]", id, "returning, buffer length:", session.outputBuffer.length);
     return id;
   }
 
   sendInput(sessionId: string, input: string): void {
     const session = this.sessions.get(sessionId);
     if (!session) throw new Error(`Session ${sessionId} not found`);
-    this.app.serviceOutput(
-      this.terminalService,
-      "[sendInput]",
-      sessionId,
-      "writing:",
-      input,
-    );
+    this.app.serviceOutput(this.terminalService, "[sendInput]", sessionId, "writing:", input);
     session.process.write(`${input}\n`);
   }
 
-  collectOutput(
-    sessionId: string,
-    fromPosition: number,
-    _waitOptions: OutputWaitOptions,
-  ): InteractiveTerminalOutput {
+  collectOutput(sessionId: string, fromPosition: number, _waitOptions: OutputWaitOptions): InteractiveTerminalOutput {
     const session = this.sessions.get(sessionId);
     if (!session) throw new Error(`Session ${sessionId} not found`);
 
-    this.app.serviceOutput(
-      this.terminalService,
-      "[collectOutput]",
-      sessionId,
-      "from:",
-      fromPosition,
-      "buffer length:",
-      session.outputBuffer.length,
-    );
+    this.app.serviceOutput(this.terminalService, "[collectOutput]", sessionId, "from:", fromPosition, "buffer length:", session.outputBuffer.length);
     const output = session.outputBuffer.substring(fromPosition);
     const newPosition = session.outputBuffer.length;
     const isComplete = session.exitCode !== undefined;
 
-    this.app.serviceOutput(
-      this.terminalService,
-      "[collectOutput]",
-      sessionId,
-      "output length:",
-      output.length,
-      "new position:",
-      newPosition,
-    );
+    this.app.serviceOutput(this.terminalService, "[collectOutput]", sessionId, "output length:", output.length, "new position:", newPosition);
     return {
       output,
       newPosition,
@@ -321,12 +240,7 @@ export default class PosixTerminalProvider
   terminateSession(sessionId: string) {
     const session = this.sessions.get(sessionId);
     if (!session) return;
-    this.app.serviceOutput(
-      this.terminalService,
-      "[terminateSession]",
-      sessionId,
-      "killing process",
-    );
+    this.app.serviceOutput(this.terminalService, "[terminateSession]", sessionId, "killing process");
     session.process.kill();
     this.sessions.delete(sessionId);
   }
@@ -344,14 +258,10 @@ export default class PosixTerminalProvider
     };
   }
 
-  private wrapWithIsolation(
-    command: string,
-    args: string[],
-    options: ExecuteCommandOptions,
-  ): { command: string; args: string[] } {
+  private wrapWithIsolation(command: string, args: string[], options: ExecuteCommandOptions): { command: string; args: string[] } {
     const isolationLevel = options.isolation;
     if (isolationLevel === "none") {
-      return {command: command, args};
+      return { command: command, args };
     }
 
     const cwd = options.workingDirectory;
@@ -400,6 +310,6 @@ export default class PosixTerminalProvider
       ...args,
     ];
 
-    return {command: "bwrap", args: bwrapArgs};
+    return { command: "bwrap", args: bwrapArgs };
   }
 }
