@@ -108,8 +108,9 @@ export default class PosixFileSystemProvider implements FileSystemProvider {
     } else {
       try {
         await fs.mkdir(dirPath);
-      } catch (error: any) {
-        if (error.code === "ENOENT") {
+      } catch (error) {
+        const { code } = error as { code?: string };
+        if (code === "ENOENT") {
           throw new Error(`Parent directory for ${dirPath} does not exist`);
         }
         throw error;

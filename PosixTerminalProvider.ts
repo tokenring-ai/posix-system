@@ -180,7 +180,7 @@ export default class PosixTerminalProvider implements InteractiveTerminalProvide
       },
     });
 
-    this.app.serviceOutput(this.terminalService, "[startInteractiveSession]", id, "PTY spawned, pid:", ptyProcess.pid);
+    //this.app.serviceOutput(this.terminalService, "[startInteractiveSession]", id, "PTY spawned, pid:", ptyProcess.pid);
 
     const session: InteractiveTerminalSession = {
       id,
@@ -192,14 +192,14 @@ export default class PosixTerminalProvider implements InteractiveTerminalProvide
     };
 
     ptyProcess.onData(data => {
-      this.app.serviceOutput(this.terminalService, "[PTY onData]", id, "received:", data.length, "bytes");
+      //this.app.serviceOutput(this.terminalService, "[PTY onData]", id, "received:", data.length, "bytes");
       session.outputBuffer += data;
       session.lastOutputTime = Date.now();
-      this.app.serviceOutput(this.terminalService, "[PTY onData]", id, "buffer now:", session.outputBuffer.length, "bytes");
+      //this.app.serviceOutput(this.terminalService, "[PTY onData]", id, "buffer now:", session.outputBuffer.length, "bytes");
     });
 
     ptyProcess.onExit(({ exitCode }) => {
-      this.app.serviceOutput(this.terminalService, "[PTY onExit]", id, "exitCode:", exitCode);
+      //this.app.serviceOutput(this.terminalService, "[PTY onExit]", id, "exitCode:", exitCode);
       session.exitCode = exitCode;
     });
 
@@ -208,14 +208,14 @@ export default class PosixTerminalProvider implements InteractiveTerminalProvide
     // Wait briefly for initial prompt to appear
     await delay(100);
 
-    this.app.serviceOutput(this.terminalService, "[startInteractiveSession]", id, "returning, buffer length:", session.outputBuffer.length);
+    //this.app.serviceOutput(this.terminalService, "[startInteractiveSession]", id, "returning, buffer length:", session.outputBuffer.length);
     return id;
   }
 
   sendInput(sessionId: string, input: string): void {
     const session = this.sessions.get(sessionId);
     if (!session) throw new Error(`Session ${sessionId} not found`);
-    this.app.serviceOutput(this.terminalService, "[sendInput]", sessionId, "writing:", input);
+    //this.app.serviceOutput(this.terminalService, "[sendInput]", sessionId, "writing:", input);
     session.process.write(`${input}\n`);
   }
 
@@ -223,12 +223,12 @@ export default class PosixTerminalProvider implements InteractiveTerminalProvide
     const session = this.sessions.get(sessionId);
     if (!session) throw new Error(`Session ${sessionId} not found`);
 
-    this.app.serviceOutput(this.terminalService, "[collectOutput]", sessionId, "from:", fromPosition, "buffer length:", session.outputBuffer.length);
+    //this.app.serviceOutput(this.terminalService, "[collectOutput]", sessionId, "from:", fromPosition, "buffer length:", session.outputBuffer.length);
     const output = session.outputBuffer.substring(fromPosition);
     const newPosition = session.outputBuffer.length;
     const isComplete = session.exitCode !== undefined;
 
-    this.app.serviceOutput(this.terminalService, "[collectOutput]", sessionId, "output length:", output.length, "new position:", newPosition);
+    //this.app.serviceOutput(this.terminalService, "[collectOutput]", sessionId, "output length:", output.length, "new position:", newPosition);
     return {
       output,
       newPosition,
@@ -240,7 +240,7 @@ export default class PosixTerminalProvider implements InteractiveTerminalProvide
   terminateSession(sessionId: string) {
     const session = this.sessions.get(sessionId);
     if (!session) return;
-    this.app.serviceOutput(this.terminalService, "[terminateSession]", sessionId, "killing process");
+    this.app.serviceOutput(this.terminalService, `[terminateSession] Terminating session ${sessionId}`);
     session.process.kill();
     this.sessions.delete(sessionId);
   }
