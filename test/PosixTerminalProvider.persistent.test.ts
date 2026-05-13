@@ -1,33 +1,33 @@
-import fs from "fs-extra";
-import {afterEach, beforeEach, describe, expect, it, vi} from "vitest";
 import createTestingApp from "@tokenring-ai/app/test/createTestingApp";
+import { TerminalConfigSchema } from "@tokenring-ai/terminal/schema";
 import TerminalService from "@tokenring-ai/terminal/TerminalService";
-import {TerminalConfigSchema} from "@tokenring-ai/terminal/schema";
+import fs from "fs-extra";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import PosixTerminalProvider from "../PosixTerminalProvider";
 
 // Mock bun-pty before importing PosixTerminalProvider
 const mockOnDataCallbacks: Map<string, (data: string) => void> = new Map();
-const mockOnExitCallbacks: Map<string, (exitInfo: {exitCode: number}) => void> = new Map();
+const mockOnExitCallbacks: Map<string, (exitInfo: { exitCode: number }) => void> = new Map();
 
-vi.mock('bun-pty', () => ({
-  spawn: vi.fn().mockImplementation(function(this: any, command: string, args: string[], options: any) {
+vi.mock("bun-pty", () => ({
+  spawn: vi.fn().mockImplementation(function (this: any, command: string, args: string[], options: any) {
     const pid = Math.floor(Math.random() * 100000) + 1000;
     let exitCode: number | undefined = undefined;
-    
+
     return {
       pid,
       onData: vi.fn((callback: (data: string) => void) => {
         mockOnDataCallbacks.set(pid, callback);
       }),
-      onExit: vi.fn((callback: (info: {exitCode: number}) => void) => {
+      onExit: vi.fn((callback: (info: { exitCode: number }) => void) => {
         mockOnExitCallbacks.set(pid, callback);
       }),
       write: vi.fn((data: string) => {
         // Simulate command execution and output
-        if (data.includes('echo')) {
+        if (data.includes("echo")) {
           const match = data.match(/echo\s+(.+)/);
           if (match) {
-            const output = match[1].trim() + '\n';
+            const output = match[1].trim() + "\n";
             const callback = mockOnDataCallbacks.get(pid);
             if (callback) {
               callback(output);
@@ -39,7 +39,7 @@ vi.mock('bun-pty', () => ({
         exitCode = 0;
         const callback = mockOnExitCallbacks.get(pid);
         if (callback) {
-          callback({exitCode: 0});
+          callback({ exitCode: 0 });
         }
       }),
     };
@@ -55,11 +55,11 @@ describe("PosixTerminalProvider Persistent Sessions", () => {
   beforeEach(() => {
     fs.ensureDirSync(testDir);
     app = createTestingApp();
-    
+
     // Create proper TerminalService configuration
     const terminalConfig = TerminalConfigSchema.parse({
       agentDefaults: {
-        provider: 'test-provider',
+        provider: "test-provider",
         workingDirectory: testDir,
         bash: {
           cropOutput: 10000,
@@ -73,10 +73,10 @@ describe("PosixTerminalProvider Persistent Sessions", () => {
       },
       providers: {},
     });
-    
+
     terminalService = new TerminalService(terminalConfig);
     app.addServices(terminalService);
-    provider = new PosixTerminalProvider(app, terminalService, {isolation: "none"});
+    provider = new PosixTerminalProvider(app, terminalService, { isolation: "none" });
   });
 
   afterEach(() => {

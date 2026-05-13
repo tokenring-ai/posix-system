@@ -1,12 +1,12 @@
-import fs from "fs-extra";
-import {beforeEach, describe, expect, it, vi} from "vitest";
 import createTestingApp from "@tokenring-ai/app/test/createTestingApp";
+import { TerminalConfigSchema } from "@tokenring-ai/terminal/schema";
 import TerminalService from "@tokenring-ai/terminal/TerminalService";
-import {TerminalConfigSchema} from "@tokenring-ai/terminal/schema";
+import fs from "fs-extra";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import PosixTerminalProvider from "../PosixTerminalProvider";
 
 // Mock bun-pty before importing PosixTerminalProvider
-vi.mock('bun-pty', () => ({
+vi.mock("bun-pty", () => ({
   spawn: vi.fn().mockImplementation(() => ({
     pid: 12345,
     onData: vi.fn(),
@@ -29,11 +29,11 @@ describe("PosixTerminalProvider Integration Tests", () => {
   beforeEach(() => {
     fs.ensureDirSync(testDir);
     app = createTestingApp();
-    
+
     // Create proper TerminalService configuration
     const terminalConfig = TerminalConfigSchema.parse({
       agentDefaults: {
-        provider: 'test-provider',
+        provider: "test-provider",
         workingDirectory: testDir,
         bash: {
           cropOutput: 10000,
@@ -47,10 +47,10 @@ describe("PosixTerminalProvider Integration Tests", () => {
       },
       providers: {},
     });
-    
+
     terminalService = new TerminalService(terminalConfig);
     app.addServices(terminalService);
-    service = new PosixTerminalProvider(app, terminalService, {isolation: "none"});
+    service = new PosixTerminalProvider(app, terminalService, { isolation: "none" });
   });
 
   describe("Shell Commands", () => {

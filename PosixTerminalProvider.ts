@@ -29,12 +29,10 @@ export default class PosixTerminalProvider implements InteractiveTerminalProvide
   readonly isInteractive = true;
   readonly name = "PosixTerminalProvider";
   description = "Provides shell command execution on local system";
-
+  supportedIsolationLevels: TerminalIsolationLevel[] = ["none"];
+  displayName: string;
   private sessions = new Map<string, InteractiveTerminalSession>();
   private nextId = 1;
-  supportedIsolationLevels: TerminalIsolationLevel[] = ["none"];
-
-  displayName: string;
   private readonly sandboxProvider: "none" | "bubblewrap" = "none";
 
   constructor(
