@@ -8,7 +8,7 @@ filesystem and terminal abstractions.
 
 The `posix-system` package provides two core providers for TokenRing applications:
 
-- **PosixFileSystemProvider**: Local filesystem operations using fs-extra, glob, and chokidar
+- **PosixFileSystemProvider**: Local filesystem operations using fs-extra, Bun glob, and fs.watch
 - **PosixTerminalProvider**: Shell command execution with PTY support and optional bubblewrap sandboxing
 
 Both providers integrate with Token Ring's service architecture and support ignore-aware operations for respecting
@@ -20,7 +20,7 @@ VCS/IDE ignore rules.
   watch)
 - **Terminal Provider**: Shell command execution with configurable timeouts, environment, and optional sandboxing
 - **Ignore-aware operations**: Most listing/searching methods accept ignore filters for respecting VCS/IDE patterns
-- **File watching**: Uses chokidar for robust filesystem watching with stability thresholds
+- **File watching**: Uses Bun's POSIX fs.watch backend with stability thresholds
 - **Shell execution**: Uses execa for reliable command execution with timeout and buffer management
 - **Bubblewrap sandboxing**: Optional bubblewrap sandboxing for terminal commands (auto-detects availability)
 - **Interactive sessions**: Support for persistent interactive terminal sessions with PTY via bun-pty
@@ -638,7 +638,6 @@ bun run test PosixTerminalProvider
 - `@tokenring-ai/filesystem` (0.2.0): Abstract filesystem interfaces
 - `@tokenring-ai/utility` (0.2.0): Utility functions including message formatting
 - `zod` (^4.3.6): Runtime type validation
-- `chokidar` (^5.0.0): File system watching
 - `execa` (^9.6.1): Shell command execution
 - `fs-extra` (^11.3.4): File system utilities
 - `glob` (^13.0.6): Glob pattern matching

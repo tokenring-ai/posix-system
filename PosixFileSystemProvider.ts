@@ -1,3 +1,5 @@
+import { EventEmitter } from "node:events";
+import { watch as watchFileSystem, type FSWatcher as NodeFSWatcher } from "node:fs";
 import path from "node:path";
 import type {
   DirectoryTreeOptions,
@@ -10,9 +12,179 @@ import type {
 } from "@tokenring-ai/filesystem/FileSystemProvider";
 import { arrayableToArray } from "@tokenring-ai/utility/array/arrayable";
 import { Glob } from "bun";
-import chokidar, { type FSWatcher } from "chokidar";
 import fs from "fs-extra";
 import type { PosixFileSystemProviderOptions } from "./schema.ts";
+
+type WatchEvent = "add" | "change";
+type PosixWatchOptions = {
+  ignoreFilter: (path: string) => boolean;
+  pollInterval: number;
+  stabilityThreshold: number;
+};
+
+class PosixFileSystemWatcher extends EventEmitter {
+  private readonly watcher: NodeFSWatcher;
+  private readonly pendingEvents = new Map<string, { event: WatchEvent; timeout: NodeJS.Timeout }>();
+  private closed = false;
+
+  constructor(
+    private readonly dir: string,
+    private readonly options: PosixWatchOptions,
+  ) {
+    super();
+    this.watcher = watchFileSystem(dir, { recursive: true }, (eventType, filename) => {
+      void this.handleFileSystemEvent(eventType, filename);
+    });
+    this.watcher.on("error", error => this.emit("error", error));
+
+    setTimeout(() => {
+      void this.emitInitialFiles(dir);
+    });
+  }
+
+  close(): void {
+    this.closed = true;
+    this.watcher.close();
+    for (const { timeout } of this.pendingEvents.values()) {
+      clearTimeout(timeout);
+    }
+    this.pendingEvents.clear();
+  }
+
+  private async handleFileSystemEvent(eventType: string, filename: string | Buffer | null): Promise<void> {
+    if (this.closed || !filename) return;
+
+    const filePath = this.resolveFilePath(filename);
+    if (this.isIgnored(filePath)) return;
+
+    if (eventType === "change") {
+      this.scheduleStableEvent("change", filePath);
+      return;
+    }
+
+    try {
+      const stats = await fs.stat(filePath);
+      if (stats.isFile()) {
+        this.scheduleStableEvent("add", filePath);
+      }
+    } catch (error) {
+      const { code } = error as { code?: string };
+      if (code === "ENOENT") {
+        this.clearPendingEvent(filePath);
+        this.emit("unlink", filePath);
+      } else {
+        this.emit("error", error);
+      }
+    }
+  }
+
+  private async emitInitialFiles(dir: string): Promise<void> {
+    if (this.closed) return;
+
+    let entries: fs.Dirent[];
+    try {
+      entries = await fs.readdir(dir, { withFileTypes: true });
+    } catch (error) {
+      if (!this.closed) this.emit("error", error);
+      return;
+    }
+
+    for (const entry of entries) {
+      if (this.closed) return;
+
+      const entryPath = path.join(dir, entry.name);
+      if (this.isIgnored(entryPath)) continue;
+
+      if (entry.isDirectory()) {
+        await this.emitInitialFiles(entryPath);
+      } else {
+        this.scheduleStableEvent("add", entryPath);
+      }
+    }
+  }
+
+  private resolveFilePath(filename: string | Buffer): string {
+    const filePath = filename.toString();
+    return path.isAbsolute(filePath) ? filePath : path.join(this.dir, filePath);
+  }
+
+  private scheduleStableEvent(event: WatchEvent, filePath: string): void {
+    const eventToEmit = this.eventWithCreationPrecedence(this.pendingEvents.get(filePath)?.event, event);
+    this.clearPendingEvent(filePath);
+
+    let lastSize = -1;
+    let lastModified = -1;
+    let stableSince = Date.now();
+
+    const check = async () => {
+      if (this.closed) return;
+
+      try {
+        if (this.isIgnored(filePath)) {
+          this.pendingEvents.delete(filePath);
+          return;
+        }
+
+        const stats = await fs.stat(filePath);
+        if (!stats.isFile()) {
+          this.pendingEvents.delete(filePath);
+          return;
+        }
+
+        const modified = stats.mtimeMs;
+        if (stats.size !== lastSize || modified !== lastModified) {
+          lastSize = stats.size;
+          lastModified = modified;
+          stableSince = Date.now();
+        }
+
+        if (Date.now() - stableSince >= this.options.stabilityThreshold) {
+          this.pendingEvents.delete(filePath);
+          this.emit(eventToEmit, filePath);
+          return;
+        }
+
+        this.pendingEvents.set(filePath, {
+          event: eventToEmit,
+          timeout: setTimeout(check, this.options.pollInterval),
+        });
+      } catch (error) {
+        this.pendingEvents.delete(filePath);
+        const { code } = error as { code?: string };
+        if (code === "ENOENT") {
+          this.emit("unlink", filePath);
+        } else {
+          this.emit("error", error);
+        }
+      }
+    };
+
+    this.pendingEvents.set(filePath, {
+      event: eventToEmit,
+      timeout: setTimeout(check, this.options.pollInterval),
+    });
+  }
+
+  private eventWithCreationPrecedence(pendingEvent: WatchEvent | undefined, event: WatchEvent): WatchEvent {
+    return pendingEvent === "add" || event === "add" ? "add" : "change";
+  }
+
+  private clearPendingEvent(filePath: string): void {
+    const pendingEvent = this.pendingEvents.get(filePath);
+    if (pendingEvent) {
+      clearTimeout(pendingEvent.timeout);
+      this.pendingEvents.delete(filePath);
+    }
+  }
+
+  private isIgnored(filePath: string): boolean {
+    try {
+      return this.options.ignoreFilter(filePath);
+    } catch {
+      return true;
+    }
+  }
+}
 
 export default class PosixFileSystemProvider implements FileSystemProvider {
   readonly name = "LocalFilesystemProvider";
@@ -143,24 +315,12 @@ export default class PosixFileSystemProvider implements FileSystemProvider {
     return files.filter(file => !ignoreFilter(file));
   }
 
-  async watch(dir: string, { ignoreFilter, pollInterval = 1000, stabilityThreshold = 2000 }: WatchOptions): Promise<FSWatcher> {
+  async watch(dir: string, { ignoreFilter, pollInterval = 1000, stabilityThreshold = 2000 }: WatchOptions): Promise<PosixFileSystemWatcher> {
     if (!(await fs.pathExists(dir))) {
       throw new Error(`Directory ${dir} does not exist`);
     }
 
-    return chokidar.watch(dir, {
-      ignored: (file: string) => {
-        try {
-          return ignoreFilter(file);
-        } catch {
-          return true;
-        }
-      },
-      awaitWriteFinish: {
-        stabilityThreshold,
-        pollInterval,
-      },
-    });
+    return new PosixFileSystemWatcher(dir, { ignoreFilter, pollInterval, stabilityThreshold });
   }
 
   async grep(searchString: string | string[], options: GrepOptions): Promise<GrepResult[]> {

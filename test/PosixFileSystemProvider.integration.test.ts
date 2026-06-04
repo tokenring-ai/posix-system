@@ -3,6 +3,23 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import PosixFileSystemProvider from "../PosixFileSystemProvider";
 
+type TestWatcher = {
+  on(event: string, listener: (filePath: string) => void): TestWatcher;
+  close(): void;
+};
+
+function waitForWatchEvent(watcher: TestWatcher, event: string, expectedPath: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => reject(new Error(`Timed out waiting for ${event} on ${expectedPath}`)), 1000);
+
+    watcher.on(event, (filePath: string) => {
+      if (filePath !== expectedPath) return;
+      clearTimeout(timeout);
+      resolve(filePath);
+    });
+  });
+}
+
 /**
  * Integration tests for PosixFileSystemProvider that test the complete flow
  * including file operations and edge cases.
@@ -109,6 +126,28 @@ describe("PosixFileSystemProvider Integration Tests", () => {
       expect(txtFiles).toContain(path.resolve(testDir, "file1.txt"));
       expect(txtFiles).toContain(path.resolve(testDir, "file2.txt"));
       expect(txtFiles).toHaveLength(2);
+    });
+  });
+
+  describe("Watch Operations", () => {
+    it("should detect files created inside directories added after watching starts", async () => {
+      const watcher = await service.watch(testDir, {
+        ignoreFilter: () => false,
+        pollInterval: 5,
+        stabilityThreshold: 10,
+      });
+      const nestedDir = path.join(testDir, "new-dir");
+      const nestedFile = path.join(nestedDir, "file.txt");
+      const added = waitForWatchEvent(watcher, "add", nestedFile);
+
+      try {
+        await service.createDirectory(nestedDir);
+        await service.writeFile(nestedFile, "created after watch started");
+
+        await expect(added).resolves.toBe(nestedFile);
+      } finally {
+        watcher.close();
+      }
     });
   });
 });

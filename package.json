@@ -8,7 +8,6 @@
     "@tokenring-ai/terminal": "workspace:*",
     "@tokenring-ai/utility": "workspace:*",
     "bun-pty": "^0.4.8",
-    "chokidar": "^5.0.0",
     "execa": "^9.6.1",
     "fs-extra": "^11.3.4",
     "zod": "^4.3.6"

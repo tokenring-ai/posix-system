@@ -1,4 +1,3 @@
-import { setTimeout as delay } from "node:timers/promises";
 import type TokenRingApp from "@tokenring-ai/app";
 import type { TerminalService } from "@tokenring-ai/terminal";
 import type {
@@ -11,8 +10,10 @@ import type {
   TerminalIsolationLevel,
 } from "@tokenring-ai/terminal/TerminalProvider";
 import formatLogMessages from "@tokenring-ai/utility/string/formatLogMessage";
+import { which } from "bun";
 import * as pty from "bun-pty";
-import { ExecaError, execa, execaSync } from "execa";
+import { execa, ExecaError, execaSync } from "execa";
+import { setTimeout as delay } from "node:timers/promises";
 import type { PosixTerminalProviderOptions } from "./schema.ts";
 
 interface InteractiveTerminalSession {
@@ -41,20 +42,18 @@ export default class PosixTerminalProvider implements InteractiveTerminalProvide
     readonly options: PosixTerminalProviderOptions,
   ) {
     if (options.sandboxProvider === "bubblewrap") {
-      try {
-        execaSync("which", ["bwrap"]);
+      if (which("bwrap")) {
         this.supportedIsolationLevels.push("sandbox");
         this.sandboxProvider = "bubblewrap";
-      } catch (err: unknown) {
-        throw new Error("bubblewrap was set as the sandbox provider, but is not installed", { cause: err });
+      } else {
+        throw new Error("bubblewrap was set as the sandbox provider, but is not installed");
       }
     }
     if (options.sandboxProvider === "auto") {
-      try {
-        execaSync("which", ["bwrap"]);
+      if (which("bwrap")) {
         this.supportedIsolationLevels.push("sandbox");
         this.sandboxProvider = "bubblewrap";
-      } catch {}
+      }
     }
 
     this.displayName = `PosixTerminalProvider (sandboxProvider: ${this.sandboxProvider})`;
