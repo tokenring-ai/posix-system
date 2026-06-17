@@ -12,7 +12,7 @@ import type {
 import formatLogMessages from "@tokenring-ai/utility/string/formatLogMessage";
 import { which } from "bun";
 import * as pty from "bun-pty";
-import { execa, ExecaError, execaSync } from "execa";
+import { execa, ExecaError } from "execa";
 import { setTimeout as delay } from "node:timers/promises";
 import type { PosixTerminalProviderOptions } from "./schema.ts";
 
