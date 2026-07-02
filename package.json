@@ -7,10 +7,10 @@
     "@tokenring-ai/filesystem": "workspace:*",
     "@tokenring-ai/terminal": "workspace:*",
     "@tokenring-ai/utility": "workspace:*",
-    "bun-pty": "^0.4.8",
+    "bun-pty": "^0.4.10",
     "execa": "^9.6.1",
-    "fs-extra": "^11.3.4",
-    "zod": "^4.3.6"
+    "fs-extra": "^11.3.5",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@types/fs-extra": "^11.0.4",

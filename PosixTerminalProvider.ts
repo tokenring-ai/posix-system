@@ -34,7 +34,7 @@ export default class PosixTerminalProvider implements InteractiveTerminalProvide
   displayName: string;
   private sessions = new Map<string, InteractiveTerminalSession>();
   private nextId = 1;
-  private readonly sandboxProvider: "none" | "bubblewrap" = "none";
+  private readonly sandboxProvider: "none" | "bubblewrap" | "sandbox-exec" = "none";
 
   constructor(
     readonly app: TokenRingApp,
@@ -49,10 +49,21 @@ export default class PosixTerminalProvider implements InteractiveTerminalProvide
         throw new Error("bubblewrap was set as the sandbox provider, but is not installed");
       }
     }
+    if (options.sandboxProvider === "sandbox-exec") {
+      if (process.platform === "darwin" && which("sandbox-exec")) {
+        this.supportedIsolationLevels.push("sandbox");
+        this.sandboxProvider = "sandbox-exec";
+      } else {
+        throw new Error("sandbox-exec was set as the sandbox provider, but is not available (macOS only)");
+      }
+    }
     if (options.sandboxProvider === "auto") {
       if (which("bwrap")) {
         this.supportedIsolationLevels.push("sandbox");
         this.sandboxProvider = "bubblewrap";
+      } else if (process.platform === "darwin" && which("sandbox-exec")) {
+        this.supportedIsolationLevels.push("sandbox");
+        this.sandboxProvider = "sandbox-exec";
       }
     }
 
@@ -263,6 +274,14 @@ export default class PosixTerminalProvider implements InteractiveTerminalProvide
 
     const cwd = options.workingDirectory;
 
+    if (this.sandboxProvider === "sandbox-exec") {
+      return this.wrapWithSandboxExec(command, args, cwd);
+    }
+
+    return this.wrapWithBubbleWrap(command, args, cwd);
+  }
+
+  private wrapWithBubbleWrap(command: string, args: string[], cwd: string) {
     const homeDir = process.env.HOME || "/home/" + process.env.USER;
     const bwrapArgs = [
       "--ro-bind",
@@ -308,5 +327,30 @@ export default class PosixTerminalProvider implements InteractiveTerminalProvide
     ];
 
     return { command: "bwrap", args: bwrapArgs };
+  }
+
+  private wrapWithSandboxExec(command: string, args: string[], cwd: string): { command: string; args: string[] } {
+    const tmpDir = process.env.TMPDIR || "/tmp";
+
+    // Escape a path for inclusion in a Lisp-like sandbox profile string literal.
+    const esc = (p: string) => p.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+
+    // Deny-by-default profile: allow reads everywhere, restrict writes to the
+    // working directory and temp dirs, and deny outbound network access.
+    const profile = [
+      "(version 1)",
+      "(allow default)",
+      "(deny file-write*)",
+      `(allow file-write* (subpath "${esc(cwd)}"))`,
+      `(allow file-write* (subpath "${esc(tmpDir)}"))`,
+      '(allow file-write* (subpath "/dev"))',
+      '(allow file-write* (subpath "/private/tmp"))',
+      '(allow file-write* (subpath "/private/var/tmp"))',
+    ].join(" ");
+
+    return {
+      command: "sandbox-exec",
+      args: ["-p", profile, command, ...args],
+    };
   }
 }
