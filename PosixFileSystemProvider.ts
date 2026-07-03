@@ -1,6 +1,3 @@
-import { EventEmitter } from "node:events";
-import { watch as watchFileSystem, type FSWatcher as NodeFSWatcher } from "node:fs";
-import path from "node:path";
 import type {
   DirectoryTreeOptions,
   FileSystemProvider,
@@ -13,6 +10,9 @@ import type {
 import { arrayableToArray } from "@tokenring-ai/utility/array/arrayable";
 import { Glob } from "bun";
 import fs from "fs-extra";
+import { EventEmitter } from "node:events";
+import { type FSWatcher as NodeFSWatcher, watch as watchFileSystem } from "node:fs";
+import path from "node:path";
 import type { PosixFileSystemProviderOptions } from "./schema.ts";
 
 type WatchEvent = "add" | "change";
@@ -187,8 +187,8 @@ class PosixFileSystemWatcher extends EventEmitter {
 }
 
 export default class PosixFileSystemProvider implements FileSystemProvider {
-  readonly name = "LocalFilesystemProvider";
-  description = "Provides access to the local filesystem";
+  readonly name = "PosixFilesystemProvider";
+  description = "Provides access to a local, posix style filesystem";
 
   constructor(readonly options: PosixFileSystemProviderOptions = {}) {}
 
@@ -353,7 +353,7 @@ export default class PosixFileSystemProvider implements FileSystemProvider {
         const lines = content.toString("utf-8").split("\n");
 
         for (let lineNum = 0; lineNum < lines.length; lineNum++) {
-          const line = lines[lineNum];
+          const line = lines[lineNum]!;
 
           if (searchStrings.some(value => value && line.includes(value))) {
             const startLine = Math.max(0, lineNum - linesBefore);

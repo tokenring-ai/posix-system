@@ -4,7 +4,7 @@ export const PosixFileSystemProviderOptionsSchema = z.object({});
 export type PosixFileSystemProviderOptions = z.output<typeof PosixFileSystemProviderOptionsSchema>;
 
 export const PosixTerminalProviderOptionsSchema = z.object({
-  sandboxProvider: z.enum(["auto", "bubblewrap","sandbox-exec"]).default("auto"),
+  sandboxProvider: z.enum(["auto", "bubblewrap", "sandbox-exec"]).default("auto"),
 });
 export type PosixTerminalProviderOptions = z.output<typeof PosixTerminalProviderOptionsSchema>;
 
