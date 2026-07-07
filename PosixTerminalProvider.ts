@@ -1,3 +1,4 @@
+import { setTimeout as delay } from "node:timers/promises";
 import type TokenRingApp from "@tokenring-ai/app";
 import type { TerminalService } from "@tokenring-ai/terminal";
 import type {
@@ -12,8 +13,7 @@ import type {
 import formatLogMessages from "@tokenring-ai/utility/string/formatLogMessage";
 import { which } from "bun";
 import * as pty from "bun-pty";
-import { execa, ExecaError } from "execa";
-import { setTimeout as delay } from "node:timers/promises";
+import { ExecaError, execa } from "execa";
 import type { PosixTerminalProviderOptions } from "./schema.ts";
 
 interface InteractiveTerminalSession {
@@ -86,16 +86,17 @@ export default class PosixTerminalProvider implements InteractiveTerminalProvide
 
       return {
         status: "success",
-        output: result.all?.trim() ?? "",
+        output: result.all.trim(),
         exitCode: 0,
       };
-    } catch (err: any) {
+    } catch (err) {
       if (err instanceof ExecaError) {
         if (err.timedOut) {
           return {
             status: "timeout",
           };
         } else if (err.exitCode !== undefined) {
+          // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- err.all is mistyped
           return {
             status: "badExitCode",
             output: err.all ?? "",
@@ -133,16 +134,17 @@ export default class PosixTerminalProvider implements InteractiveTerminalProvide
 
       return {
         status: "success",
-        output: result.all?.trim() ?? "",
+        output: result.all.trim(),
         exitCode: 0,
       };
-    } catch (err: any) {
+    } catch (err) {
       if (err instanceof ExecaError) {
         if (err.timedOut) {
           return {
             status: "timeout",
           };
         } else if (err.exitCode !== undefined) {
+          // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- err.all is mistyped
           return {
             status: "badExitCode",
             output: err.all ?? "",

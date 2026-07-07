@@ -1,3 +1,6 @@
+import { EventEmitter } from "node:events";
+import { type FSWatcher as NodeFSWatcher, watch as watchFileSystem } from "node:fs";
+import path from "node:path";
 import type {
   DirectoryTreeOptions,
   FileSystemProvider,
@@ -10,9 +13,6 @@ import type {
 import { arrayableToArray } from "@tokenring-ai/utility/array/arrayable";
 import { Glob } from "bun";
 import fs from "fs-extra";
-import { EventEmitter } from "node:events";
-import { type FSWatcher as NodeFSWatcher, watch as watchFileSystem } from "node:fs";
-import path from "node:path";
 import type { PosixFileSystemProviderOptions } from "./schema.ts";
 
 type WatchEvent = "add" | "change";
@@ -52,6 +52,7 @@ class PosixFileSystemWatcher extends EventEmitter {
   }
 
   private async handleFileSystemEvent(eventType: string, filename: string | Buffer | null): Promise<void> {
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- this.closed can be mutated asynchronously by close(); TS narrowing doesn't account for this across await/loop iterations
     if (this.closed || !filename) return;
 
     const filePath = this.resolveFilePath(filename);
@@ -79,17 +80,20 @@ class PosixFileSystemWatcher extends EventEmitter {
   }
 
   private async emitInitialFiles(dir: string): Promise<void> {
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- this.closed can be mutated asynchronously by close(); TS narrowing doesn't account for this across await/loop iterations
     if (this.closed) return;
 
     let entries: fs.Dirent[];
     try {
       entries = await fs.readdir(dir, { withFileTypes: true });
     } catch (error) {
+      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- this.closed can be mutated asynchronously by close(); TS narrowing doesn't account for this across await/loop iterations
       if (!this.closed) this.emit("error", error);
       return;
     }
 
     for (const entry of entries) {
+      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- this.closed can be mutated asynchronously by close(); TS narrowing doesn't account for this across await/loop iterations
       if (this.closed) return;
 
       const entryPath = path.join(dir, entry.name);
@@ -117,6 +121,7 @@ class PosixFileSystemWatcher extends EventEmitter {
     let stableSince = Date.now();
 
     const check = async () => {
+      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- this.closed can be mutated asynchronously by close(); TS narrowing doesn't account for this across await/loop iterations
       if (this.closed) return;
 
       try {
@@ -337,7 +342,7 @@ export default class PosixFileSystemProvider implements FileSystemProvider {
       allFiles.push(file);
     }
 
-    const filesToSearch = ignoreFilter ? allFiles.filter(file => !ignoreFilter(file)) : allFiles;
+    const filesToSearch = allFiles.filter(file => !ignoreFilter(file));
 
     const results: Array<{
       file: string;
