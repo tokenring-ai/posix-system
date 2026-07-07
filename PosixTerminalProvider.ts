@@ -96,10 +96,9 @@ export default class PosixTerminalProvider implements InteractiveTerminalProvide
             status: "timeout",
           };
         } else if (err.exitCode !== undefined) {
-          // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- err.all is mistyped
           return {
             status: "badExitCode",
-            output: err.all ?? "",
+            output: (typeof err.stdout === "string" ? err.stdout : "").trim(),
             exitCode: err.exitCode,
           };
         }
@@ -144,10 +143,9 @@ export default class PosixTerminalProvider implements InteractiveTerminalProvide
             status: "timeout",
           };
         } else if (err.exitCode !== undefined) {
-          // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- err.all is mistyped
           return {
             status: "badExitCode",
-            output: err.all ?? "",
+            output: (typeof err.stdout === "string" ? err.stdout : "").trim(),
             exitCode: err.exitCode,
           };
         }
