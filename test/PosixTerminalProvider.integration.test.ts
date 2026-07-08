@@ -79,5 +79,31 @@ describe("PosixTerminalProvider Integration Tests", () => {
         expect(result.output).toBe("test");
       }
     });
+
+    it("should return partial output when a command times out", async () => {
+      const result = await service.runScript("echo before-timeout; sleep 5; echo after-timeout", {
+        timeoutSeconds: 1,
+        workingDirectory: testDir,
+        isolation: "none",
+      });
+
+      expect(result.status).toBe("timeout");
+      if (result.status === "timeout") {
+        expect(result.output).toBe("before-timeout");
+      }
+    });
+
+    it("should return partial output when executeCommand times out", async () => {
+      const result = await service.executeCommand("bash", ["-c", "echo partial; sleep 5"], {
+        timeoutSeconds: 1,
+        workingDirectory: testDir,
+        isolation: "none",
+      });
+
+      expect(result.status).toBe("timeout");
+      if (result.status === "timeout") {
+        expect(result.output).toBe("partial");
+      }
+    });
   });
 });

@@ -16,6 +16,16 @@ import * as pty from "bun-pty";
 import { ExecaError, execa } from "execa";
 import type { PosixTerminalProviderOptions } from "./schema.ts";
 
+function getExecaOutput(err: ExecaError): string {
+  if (typeof err.all === "string") {
+    return err.all.trim();
+  }
+
+  const stdout = typeof err.stdout === "string" ? err.stdout : "";
+  const stderr = typeof err.stderr === "string" ? err.stderr : "";
+  return [stdout, stderr].filter(Boolean).join("\n").trim();
+}
+
 interface InteractiveTerminalSession {
   id: string;
   process: pty.IPty;
@@ -94,11 +104,12 @@ export default class PosixTerminalProvider implements InteractiveTerminalProvide
         if (err.timedOut) {
           return {
             status: "timeout",
+            output: getExecaOutput(err),
           };
         } else if (err.exitCode !== undefined) {
           return {
             status: "badExitCode",
-            output: (typeof err.stdout === "string" ? err.stdout : "").trim(),
+            output: getExecaOutput(err),
             exitCode: err.exitCode,
           };
         }
@@ -141,11 +152,12 @@ export default class PosixTerminalProvider implements InteractiveTerminalProvide
         if (err.timedOut) {
           return {
             status: "timeout",
+            output: getExecaOutput(err),
           };
         } else if (err.exitCode !== undefined) {
           return {
             status: "badExitCode",
-            output: (typeof err.stdout === "string" ? err.stdout : "").trim(),
+            output: getExecaOutput(err),
             exitCode: err.exitCode,
           };
         }
