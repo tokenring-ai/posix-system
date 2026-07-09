@@ -6,8 +6,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import PosixTerminalProvider from "../PosixTerminalProvider";
 
 // Mock bun-pty before importing PosixTerminalProvider
-const mockOnDataCallbacks: Map<string, (data: string) => void> = new Map();
-const mockOnExitCallbacks: Map<string, (exitInfo: { exitCode: number }) => void> = new Map();
+const mockOnDataCallbacks: Map<number, (data: string) => void> = new Map();
+const mockOnExitCallbacks: Map<number, (exitInfo: { exitCode: number }) => void> = new Map();
 
 vi.mock("bun-pty", () => ({
   spawn: vi.fn().mockImplementation(function (this: any, command: string, args: string[], options: any) {
@@ -26,8 +26,9 @@ vi.mock("bun-pty", () => ({
         // Simulate command execution and output
         if (data.includes("echo")) {
           const match = data.match(/echo\s+(.+)/);
-          if (match) {
-            const output = match[1].trim() + "\n";
+          const matched = match?.[1];
+          if (matched) {
+            const output = matched.trim() + "\n";
             const callback = mockOnDataCallbacks.get(pid);
             if (callback) {
               callback(output);
@@ -76,7 +77,7 @@ describe("PosixTerminalProvider Persistent Sessions", () => {
 
     terminalService = new TerminalService(terminalConfig);
     app.addServices(terminalService);
-    provider = new PosixTerminalProvider(app, terminalService, { isolation: "none" });
+    provider = new PosixTerminalProvider(app, terminalService, { sandboxProvider: "auto" });
   });
 
   afterEach(() => {
@@ -92,6 +93,7 @@ describe("PosixTerminalProvider Persistent Sessions", () => {
     const sessionId = await provider.startInteractiveSession({
       timeoutSeconds: 0,
       workingDirectory: testDir,
+      isolation: "none",
     });
 
     expect(sessionId).toMatch(/^term-\d+$/);
@@ -130,11 +132,13 @@ describe("PosixTerminalProvider Persistent Sessions", () => {
     const session1 = await provider.startInteractiveSession({
       timeoutSeconds: 0,
       workingDirectory: testDir,
+      isolation: "none",
     });
 
     const session2 = await provider.startInteractiveSession({
       timeoutSeconds: 0,
       workingDirectory: testDir,
+      isolation: "none",
     });
 
     expect(session1).not.toBe(session2);
@@ -153,6 +157,7 @@ describe("PosixTerminalProvider Persistent Sessions", () => {
     const sessionId = await provider.startInteractiveSession({
       timeoutSeconds: 0,
       workingDirectory: testDir,
+      isolation: "none",
     });
 
     await provider.sendInput(sessionId, "echo first");
@@ -182,9 +187,8 @@ describe("PosixTerminalProvider Persistent Sessions", () => {
     await provider.terminateSession(sessionId);
   });
 
-  it("should return correct isolation level", () => {
-    const isolationLevel = provider.getIsolationLevel();
-    expect(isolationLevel).toBe("none");
+  it("should support the none isolation level", () => {
+    expect(provider.supportedIsolationLevels).toContain("none");
   });
 
   it("should handle non-existent session", async () => {

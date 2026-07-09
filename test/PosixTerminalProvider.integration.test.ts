@@ -50,13 +50,13 @@ describe("PosixTerminalProvider Integration Tests", () => {
 
     terminalService = new TerminalService(terminalConfig);
     app.addServices(terminalService);
-    service = new PosixTerminalProvider(app, terminalService, { isolation: "none" });
+    service = new PosixTerminalProvider(app, terminalService, { sandboxProvider: "auto" });
   });
 
   describe("Shell Commands", () => {
     it("should run shell commands", async () => {
       // Simple command test
-      const result = await service.runScript("echo hello", { timeoutSeconds: 5, workingDirectory: testDir });
+      const result = await service.runScript("echo hello", { timeoutSeconds: 5, workingDirectory: testDir, isolation: "none" });
       expect(result.status).toBe("success");
       if (result.status === "success") {
         expect(result.output).toBe("hello");
@@ -65,7 +65,7 @@ describe("PosixTerminalProvider Integration Tests", () => {
 
     it("should handle command errors gracefully", async () => {
       // Command that should fail
-      const result = await service.runScript("false", { timeoutSeconds: 5, workingDirectory: testDir });
+      const result = await service.runScript("false", { timeoutSeconds: 5, workingDirectory: testDir, isolation: "none" });
       expect(result.status).toBe("badExitCode");
       if (result.status === "badExitCode") {
         expect(result.exitCode).toBe(1);
@@ -73,7 +73,7 @@ describe("PosixTerminalProvider Integration Tests", () => {
     });
 
     it("should handle command execution with executeCommand", async () => {
-      const result = await service.executeCommand("echo", ["test"], { timeoutSeconds: 5, workingDirectory: testDir });
+      const result = await service.executeCommand("echo", ["test"], { timeoutSeconds: 5, workingDirectory: testDir, isolation: "none" });
       expect(result.status).toBe("success");
       if (result.status === "success") {
         expect(result.output).toBe("test");

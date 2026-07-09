@@ -56,8 +56,11 @@ describe("PosixFileSystemProvider Integration Tests", () => {
 
       // Get file stats
       const stats = await service.stat(absoluteFilePath);
-      expect(stats.isFile).toBe(true);
-      expect(stats.size).toBe(content.length);
+      expect(stats.exists).toBe(true);
+      if (stats.exists) {
+        expect(stats.isFile).toBe(true);
+        expect(stats.size).toBe(content.length);
+      }
 
       // Delete the file
       await service.deleteFile(absoluteFilePath);
@@ -74,7 +77,10 @@ describe("PosixFileSystemProvider Integration Tests", () => {
 
       // Get directory stats
       const stats = await service.stat(absoluteDirPath);
-      expect(stats.isDirectory).toBe(true);
+      expect(stats.exists).toBe(true);
+      if (stats.exists) {
+        expect(stats.isDirectory).toBe(true);
+      }
 
       // Create a file in the directory
       const filePath = path.join(absoluteDirPath, "file.txt");
