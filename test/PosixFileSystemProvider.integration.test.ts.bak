@@ -1,6 +1,6 @@
-import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import path from "node:path";
 import fs from "fs-extra";
+import path from "node:path";
+import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import PosixFileSystemProvider from "../PosixFileSystemProvider";
 
 type TestWatcher = {
@@ -25,7 +25,7 @@ function waitForWatchEvent(watcher: TestWatcher, event: string, expectedPath: st
  * including file operations and edge cases.
  */
 describe("PosixFileSystemProvider Integration Tests", () => {
-  const testDir = "/tmp/posix-filesystem-test";
+  let testDir = "/tmp/posix-filesystem-test";
   let service!: PosixFileSystemProvider;
 
   beforeEach(() => {
@@ -115,8 +115,8 @@ describe("PosixFileSystemProvider Integration Tests", () => {
     it("should throw error for non-existent file operations", async () => {
       const nonExistentFile = path.resolve(testDir, "non-existent.txt");
 
-      expect(service.readFile(nonExistentFile)).resolves.toBeNull();
-      expect(service.deleteFile(nonExistentFile)).rejects.toThrow();
+      await expect(service.readFile(nonExistentFile)).resolves.toBeNull();
+      await expect(service.deleteFile(nonExistentFile)).rejects.toThrow();
     });
   });
 

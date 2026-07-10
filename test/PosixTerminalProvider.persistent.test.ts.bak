@@ -1,18 +1,18 @@
-import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
 import createTestingApp from "@tokenring-ai/app/test/createTestingApp.test";
 import { TerminalConfigSchema } from "@tokenring-ai/terminal/schema";
 import TerminalService from "@tokenring-ai/terminal/TerminalService";
 import fs from "fs-extra";
+import { afterEach,beforeEach,describe,expect,it,mock } from "bun:test";
 import PosixTerminalProvider from "../PosixTerminalProvider";
 
 // Mock bun-pty before importing PosixTerminalProvider
 const mockOnDataCallbacks: Map<number, (data: string) => void> = new Map();
 const mockOnExitCallbacks: Map<number, (exitInfo: { exitCode: number }) => void> = new Map();
 
-void mock.module("bun-pty", () => ({
-  spawn: mock().mockImplementation(function (this: any, _command: string, _args: string[], _options: any) {
+mock.module("bun-pty", () => ({
+  spawn: mock().mockImplementation(function (this: any, command: string, args: string[], options: any) {
     const pid = Math.floor(Math.random() * 100000) + 1000;
-    let _exitCode: number | undefined;
+    let exitCode: number | undefined = undefined;
 
     return {
       pid,
@@ -37,7 +37,7 @@ void mock.module("bun-pty", () => ({
         }
       }),
       kill: mock(() => {
-        _exitCode = 0;
+        exitCode = 0;
         const callback = mockOnExitCallbacks.get(pid);
         if (callback) {
           callback({ exitCode: 0 });
@@ -48,7 +48,7 @@ void mock.module("bun-pty", () => ({
 }));
 
 describe("PosixTerminalProvider Persistent Sessions", () => {
-  const testDir = "/tmp/posix-terminal-persistent-test";
+  let testDir = "/tmp/posix-terminal-persistent-test";
   let app: any;
   let terminalService: TerminalService;
   let provider: PosixTerminalProvider;
@@ -72,6 +72,7 @@ describe("PosixTerminalProvider Persistent Sessions", () => {
           maxInterval: 30,
         },
       },
+      providers: {},
     });
 
     terminalService = new TerminalService(terminalConfig);
@@ -103,13 +104,13 @@ describe("PosixTerminalProvider Persistent Sessions", () => {
     expect(status?.running).toBe(true);
 
     // Send a command
-    provider.sendInput(sessionId, "echo hello");
+    await provider.sendInput(sessionId, "echo hello");
 
     // Wait a bit for output
     await new Promise(resolve => setTimeout(resolve, 100));
 
     // Collect output
-    const output = provider.collectOutput(sessionId, 0, {
+    const output = await provider.collectOutput(sessionId, 0, {
       minInterval: 0,
       settleInterval: 0,
       maxInterval: 1,
@@ -120,7 +121,7 @@ describe("PosixTerminalProvider Persistent Sessions", () => {
     expect(output.newPosition).toBeGreaterThan(0);
 
     // Terminate session
-    provider.terminateSession(sessionId);
+    await provider.terminateSession(sessionId);
 
     // Verify session is gone
     const statusAfter = provider.getSessionStatus(sessionId);
@@ -148,8 +149,8 @@ describe("PosixTerminalProvider Persistent Sessions", () => {
     expect(status1?.running).toBe(true);
     expect(status2?.running).toBe(true);
 
-    provider.terminateSession(session1);
-    provider.terminateSession(session2);
+    await provider.terminateSession(session1);
+    await provider.terminateSession(session2);
   });
 
   it("should track output position correctly", async () => {
@@ -159,10 +160,10 @@ describe("PosixTerminalProvider Persistent Sessions", () => {
       isolation: "none",
     });
 
-    provider.sendInput(sessionId, "echo first");
+    await provider.sendInput(sessionId, "echo first");
     await new Promise(resolve => setTimeout(resolve, 100));
 
-    const output1 = provider.collectOutput(sessionId, 0, {
+    const output1 = await provider.collectOutput(sessionId, 0, {
       minInterval: 0,
       settleInterval: 0,
       maxInterval: 1,
@@ -171,10 +172,10 @@ describe("PosixTerminalProvider Persistent Sessions", () => {
     expect(output1.output).toContain("first");
     const pos1 = output1.newPosition;
 
-    provider.sendInput(sessionId, "echo second");
+    await provider.sendInput(sessionId, "echo second");
     await new Promise(resolve => setTimeout(resolve, 100));
 
-    const output2 = provider.collectOutput(sessionId, pos1, {
+    const output2 = await provider.collectOutput(sessionId, pos1, {
       minInterval: 0,
       settleInterval: 0,
       maxInterval: 1,
@@ -183,24 +184,25 @@ describe("PosixTerminalProvider Persistent Sessions", () => {
     expect(output2.output).toContain("second");
     expect(output2.output).not.toContain("first");
 
-    provider.terminateSession(sessionId);
+    await provider.terminateSession(sessionId);
   });
 
   it("should support the none isolation level", () => {
     expect(provider.supportedIsolationLevels).toContain("none");
   });
 
-  it("should handle non-existent session", () => {
-    // sendInput/collectOutput throw synchronously for missing sessions
-    expect(() => provider.sendInput("non-existent-session", "test")).toThrow("Session non-existent-session not found");
+  it("should handle non-existent session", async () => {
+    await expect(provider.sendInput("non-existent-session", "test"))
+      .rejects
+      .toThrow("Session non-existent-session not found");
 
-    expect(() =>
-      provider.collectOutput("non-existent-session", 0, {
-        minInterval: 0,
-        settleInterval: 0,
-        maxInterval: 1,
-      }),
-    ).toThrow("Session non-existent-session not found");
+    await expect(provider.collectOutput("non-existent-session", 0, {
+      minInterval: 0,
+      settleInterval: 0,
+      maxInterval: 1,
+    }))
+      .rejects
+      .toThrow("Session non-existent-session not found");
 
     const status = provider.getSessionStatus("non-existent-session");
     expect(status).toBeNull();

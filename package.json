@@ -14,7 +14,6 @@
   },
   "devDependencies": {
     "@types/fs-extra": "^11.0.4",
-    "vitest": "^4.1.1",
     "typescript": "^6.0.2"
   },
   "exports": {
@@ -23,10 +22,10 @@
   },
   "license": "MIT",
   "scripts": {
-    "test": "vitest run",
+    "test": "bun test",
     "build": "tsc --noEmit",
-    "test:watch": "vitest",
-    "test:coverage": "vitest run --coverage"
+    "test:watch": "bun test --watch",
+    "test:coverage": "bun test --coverage"
   },
   "type": "module"
 }
