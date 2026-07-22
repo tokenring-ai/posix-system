@@ -647,7 +647,7 @@ bun run test PosixTerminalProvider
 ### Development Dependencies
 
 - `@types/fs-extra` (^11.0.4): File system type definitions
-- `vitest` (^4.1.1): Testing framework
+- `bun test` - Testing framework
 - `typescript` (^6.0.2): TypeScript compiler
 
 ## Related Components
