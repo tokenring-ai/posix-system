@@ -25,6 +25,7 @@ type PosixWatchOptions = {
 class PosixFileSystemWatcher extends EventEmitter {
   private readonly watcher: NodeFSWatcher;
   private readonly pendingEvents = new Map<string, { event: WatchEvent; timeout: NodeJS.Timeout }>();
+  private readonly knownFiles = new Set<string>();
   private closed = false;
 
   constructor(
@@ -49,6 +50,7 @@ class PosixFileSystemWatcher extends EventEmitter {
       clearTimeout(timeout);
     }
     this.pendingEvents.clear();
+    this.knownFiles.clear();
   }
 
   private async handleFileSystemEvent(eventType: string, filename: string | Buffer | null): Promise<void> {
@@ -58,24 +60,40 @@ class PosixFileSystemWatcher extends EventEmitter {
     const filePath = this.resolveFilePath(filename);
     if (this.isIgnored(filePath)) return;
 
-    if (eventType === "change") {
-      this.scheduleStableEvent("change", filePath);
-      return;
-    }
-
     try {
       const stats = await fs.stat(filePath);
-      if (stats.isFile()) {
-        this.scheduleStableEvent("add", filePath);
+      if (stats.isDirectory()) {
+        // Recursive fs.watch on macOS often only reports the directory create when
+        // a file is written immediately after mkdir. Scan (and briefly re-scan) so
+        // nested files still surface as "add" events.
+        await this.emitInitialFiles(filePath);
+        this.scheduleDirectoryRescan(filePath);
+        return;
       }
+      if (!stats.isFile()) return;
+
+      // Platforms such as macOS may report new files as "change". Treat first
+      // sightings of a path as "add" so nested creates after watch start work.
+      const event: WatchEvent = this.knownFiles.has(filePath) && eventType === "change" ? "change" : "add";
+      this.scheduleStableEvent(event, filePath);
     } catch (error) {
       const { code } = error as { code?: string };
       if (code === "ENOENT") {
         this.clearPendingEvent(filePath);
+        this.knownFiles.delete(filePath);
         this.emit("unlink", filePath);
       } else {
         this.emit("error", error);
       }
+    }
+  }
+
+  private scheduleDirectoryRescan(dir: string): void {
+    for (const delay of [25, 75, 150]) {
+      setTimeout(() => {
+        // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- this.closed can be mutated asynchronously by close(); TS narrowing doesn't account for this across await/loop iterations
+        if (!this.closed) void this.emitInitialFiles(dir);
+      }, delay);
     }
   }
 
@@ -87,8 +105,10 @@ class PosixFileSystemWatcher extends EventEmitter {
     try {
       entries = await fs.readdir(dir, { withFileTypes: true });
     } catch (error) {
+      const { code } = error as { code?: string };
+      // Directory may disappear between event and scan (or during follow-up rescans).
       // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- this.closed can be mutated asynchronously by close(); TS narrowing doesn't account for this across await/loop iterations
-      if (!this.closed) this.emit("error", error);
+      if (!this.closed && code !== "ENOENT") this.emit("error", error);
       return;
     }
 
@@ -101,7 +121,7 @@ class PosixFileSystemWatcher extends EventEmitter {
 
       if (entry.isDirectory()) {
         await this.emitInitialFiles(entryPath);
-      } else {
+      } else if (!this.knownFiles.has(entryPath) && !this.pendingEvents.has(entryPath)) {
         this.scheduleStableEvent("add", entryPath);
       }
     }
@@ -145,6 +165,9 @@ class PosixFileSystemWatcher extends EventEmitter {
 
         if (Date.now() - stableSince >= this.options.stabilityThreshold) {
           this.pendingEvents.delete(filePath);
+          if (eventToEmit === "add") {
+            this.knownFiles.add(filePath);
+          }
           this.emit(eventToEmit, filePath);
           return;
         }

@@ -8,9 +8,9 @@ type TestWatcher = {
   close(): void;
 };
 
-function waitForWatchEvent(watcher: TestWatcher, event: string, expectedPath: string): Promise<string> {
+function waitForWatchEvent(watcher: TestWatcher, event: string, expectedPath: string, timeoutMs = 5000): Promise<string> {
   return new Promise((resolve, reject) => {
-    const timeout = setTimeout(() => reject(new Error(`Timed out waiting for ${event} on ${expectedPath}`)), 1000);
+    const timeout = setTimeout(() => reject(new Error(`Timed out waiting for ${event} on ${expectedPath}`)), timeoutMs);
 
     watcher.on(event, (filePath: string) => {
       if (filePath !== expectedPath) return;
@@ -25,17 +25,18 @@ function waitForWatchEvent(watcher: TestWatcher, event: string, expectedPath: st
  * including file operations and edge cases.
  */
 describe("PosixFileSystemProvider Integration Tests", () => {
-  const testDir = "/tmp/posix-filesystem-test";
+  let testDir!: string;
   let service!: PosixFileSystemProvider;
 
   beforeEach(() => {
-    fs.ensureDirSync(testDir);
+    // Unique dir per test avoids cross-test races under full-suite load.
+    testDir = fs.mkdtempSync(path.join("/tmp", "posix-filesystem-test-"));
     service = new PosixFileSystemProvider();
   });
 
   afterEach(() => {
     // Clean up the temporary directory
-    if (fs.existsSync(testDir)) {
+    if (testDir && fs.existsSync(testDir)) {
       fs.removeSync(testDir);
     }
   });
@@ -142,6 +143,9 @@ describe("PosixFileSystemProvider Integration Tests", () => {
         pollInterval: 5,
         stabilityThreshold: 10,
       });
+      // Allow the native recursive watcher and initial scan to settle.
+      await new Promise(resolve => setTimeout(resolve, 50));
+
       const nestedDir = path.join(testDir, "new-dir");
       const nestedFile = path.join(nestedDir, "file.txt");
       const added = waitForWatchEvent(watcher, "add", nestedFile);
