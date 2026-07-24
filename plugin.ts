@@ -25,5 +25,5 @@ export default {
       terminalService.registerTerminalProvider("posix", new PosixTerminalProvider(app, terminalService, config.posix.terminal));
     });
   },
-  config: packageConfigSchema,
+  configSchema: packageConfigSchema,
 } satisfies TokenRingPlugin<typeof packageConfigSchema>;
