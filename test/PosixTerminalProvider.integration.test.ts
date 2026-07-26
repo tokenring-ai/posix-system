@@ -1,20 +1,9 @@
-import { beforeEach, describe, expect, it, mock } from "bun:test";
+import { beforeEach, describe, expect, it } from "bun:test";
 import createTestingApp from "@tokenring-ai/app/test/createTestingApp.test";
 import { TerminalConfigSchema } from "@tokenring-ai/terminal/schema";
 import TerminalService from "@tokenring-ai/terminal/TerminalService";
 import fs from "fs-extra";
 import PosixTerminalProvider from "../PosixTerminalProvider";
-
-// Mock bun-pty before importing PosixTerminalProvider
-void mock.module("bun-pty", () => ({
-  spawn: mock().mockImplementation(() => ({
-    pid: 12345,
-    onData: mock(),
-    onExit: mock(),
-    write: mock(),
-    kill: mock(),
-  })),
-}));
 
 /**
  * Integration tests for PosixTerminalProvider that test the complete flow
@@ -79,7 +68,6 @@ describe("PosixTerminalProvider Integration Tests", () => {
       }
     });
 
-    // execa may take several seconds after the timeout to force-kill a sleeping child
     it("should return partial output when a command times out", async () => {
       const result = await service.runScript("echo before-timeout; sleep 2; echo after-timeout", {
         timeoutSeconds: 1,

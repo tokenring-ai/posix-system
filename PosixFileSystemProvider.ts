@@ -1,3 +1,4 @@
+import EnhancedMap from "@tokenring-ai/utility/map/enhancedMap";
 import { EventEmitter } from "node:events";
 import { type FSWatcher as NodeFSWatcher, watch as watchFileSystem } from "node:fs";
 import path from "node:path";
@@ -24,7 +25,7 @@ type PosixWatchOptions = {
 
 class PosixFileSystemWatcher extends EventEmitter {
   private readonly watcher: NodeFSWatcher;
-  private readonly pendingEvents = new Map<string, { event: WatchEvent; timeout: NodeJS.Timeout }>();
+  private readonly pendingEvents = new EnhancedMap<string, { event: WatchEvent; timeout: NodeJS.Timeout }>();
   private readonly knownFiles = new Set<string>();
   private closed = false;
 
@@ -198,10 +199,9 @@ class PosixFileSystemWatcher extends EventEmitter {
   }
 
   private clearPendingEvent(filePath: string): void {
-    const pendingEvent = this.pendingEvents.get(filePath);
+    const pendingEvent = this.pendingEvents.deleteAndReturnItem(filePath);
     if (pendingEvent) {
-      clearTimeout(pendingEvent.timeout);
-      this.pendingEvents.delete(filePath);
+      clearTimeout(pendingEvent.timeout);;
     }
   }
 
@@ -338,9 +338,17 @@ export default class PosixFileSystemProvider implements FileSystemProvider {
   async glob(pattern: string, { ignoreFilter, includeDirectories = false }: GlobOptions): Promise<string[]> {
     const glob = new Glob(pattern);
 
-    const files = await Array.fromAsync(glob.scan({ dot: true, onlyFiles: !includeDirectories, absolute: true }));
+    try {
+      const files = await Array.fromAsync(glob.scan({ dot: true, onlyFiles: !includeDirectories, absolute: true }));
 
-    return files.filter(file => !ignoreFilter(file));
+      return files.filter(file => !ignoreFilter(file));
+    } catch (err) {
+      // Glob throws errors if the path does not exist, which sucks
+      if (Error.isError(err) && err.message.includes("ENOENT")) {
+        return [];
+      }
+      throw err;
+    }
   }
 
   async watch(dir: string, { ignoreFilter, pollInterval = 1000, stabilityThreshold = 2000 }: WatchOptions): Promise<PosixFileSystemWatcher> {

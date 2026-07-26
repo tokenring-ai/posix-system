@@ -21,9 +21,9 @@ VCS/IDE ignore rules.
 - **Terminal Provider**: Shell command execution with configurable timeouts, environment, and optional sandboxing
 - **Ignore-aware operations**: Most listing/searching methods accept ignore filters for respecting VCS/IDE patterns
 - **File watching**: Uses Bun's POSIX fs.watch backend with stability thresholds
-- **Shell execution**: Uses execa for reliable command execution with timeout and buffer management
+- **Shell execution**: Uses `Bun.spawn` for command execution with timeout and buffer management
 - **Bubblewrap sandboxing**: Optional bubblewrap sandboxing for terminal commands (auto-detects availability)
-- **Interactive sessions**: Support for persistent interactive terminal sessions with PTY via bun-pty
+- **Interactive sessions**: Support for persistent interactive terminal sessions with PTY via Bun's native terminal API
 - **Type-safe**: Built with TypeScript and validated with Zod schemas
 - **Plugin architecture**: Integrates with Token Ring applications as a plugin
 - **Async generators**: Directory tree traversal via async generators for memory-efficient iteration
@@ -638,11 +638,9 @@ bun run test PosixTerminalProvider
 - `@tokenring-ai/filesystem` (0.2.0): Abstract filesystem interfaces
 - `@tokenring-ai/utility` (0.2.0): Utility functions including message formatting
 - `zod` (^4.3.6): Runtime type validation
-- `execa` (^9.6.1): Shell command execution
 - `fs-extra` (^11.3.4): File system utilities
 - `glob` (^13.0.6): Glob pattern matching
 - `glob-gitignore` (^1.0.15): Gitignore-aware glob patterns
-- `bun-pty` (^0.4.8): Terminal emulation and PTY management
 
 ### Development Dependencies
 

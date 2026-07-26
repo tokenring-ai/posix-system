@@ -1,57 +1,16 @@
-import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
+import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import createTestingApp from "@tokenring-ai/app/test/createTestingApp.test";
 import { TerminalConfigSchema } from "@tokenring-ai/terminal/schema";
 import TerminalService from "@tokenring-ai/terminal/TerminalService";
 import fs from "fs-extra";
 import PosixTerminalProvider from "../PosixTerminalProvider";
 
-// Mock bun-pty before importing PosixTerminalProvider
-const mockOnDataCallbacks: Map<number, (data: string) => void> = new Map();
-const mockOnExitCallbacks: Map<number, (exitInfo: { exitCode: number }) => void> = new Map();
-
-void mock.module("bun-pty", () => ({
-  spawn: mock().mockImplementation(function (this: any, _command: string, _args: string[], _options: any) {
-    const pid = Math.floor(Math.random() * 100000) + 1000;
-    let _exitCode: number | undefined;
-
-    return {
-      pid,
-      onData: mock((callback: (data: string) => void) => {
-        mockOnDataCallbacks.set(pid, callback);
-      }),
-      onExit: mock((callback: (info: { exitCode: number }) => void) => {
-        mockOnExitCallbacks.set(pid, callback);
-      }),
-      write: mock((data: string) => {
-        // Simulate command execution and output
-        if (data.includes("echo")) {
-          const match = data.match(/echo\s+(.+)/);
-          const matched = match?.[1];
-          if (matched) {
-            const output = matched.trim() + "\n";
-            const callback = mockOnDataCallbacks.get(pid);
-            if (callback) {
-              callback(output);
-            }
-          }
-        }
-      }),
-      kill: mock(() => {
-        _exitCode = 0;
-        const callback = mockOnExitCallbacks.get(pid);
-        if (callback) {
-          callback({ exitCode: 0 });
-        }
-      }),
-    };
-  }),
-}));
-
 describe("PosixTerminalProvider Persistent Sessions", () => {
   const testDir = "/tmp/posix-terminal-persistent-test";
   let app: any;
   let terminalService: TerminalService;
   let provider: PosixTerminalProvider;
+  const activeSessions: string[] = [];
 
   beforeEach(() => {
     fs.ensureDirSync(testDir);
@@ -77,68 +36,78 @@ describe("PosixTerminalProvider Persistent Sessions", () => {
     terminalService = new TerminalService(terminalConfig);
     app.addServices(terminalService);
     provider = new PosixTerminalProvider(app, terminalService, { sandboxProvider: "auto" });
+    activeSessions.length = 0;
   });
 
   afterEach(() => {
+    for (const id of activeSessions) {
+      try {
+        provider.terminateSession(id);
+      } catch {
+        // ignore
+      }
+    }
     if (fs.existsSync(testDir)) {
       fs.removeSync(testDir);
     }
-    mockOnDataCallbacks.clear();
-    mockOnExitCallbacks.clear();
   });
 
-  it("should start and interact with a persistent session", async () => {
-    // Start a session
+  async function startSession() {
     const sessionId = await provider.startInteractiveSession({
       timeoutSeconds: 0,
       workingDirectory: testDir,
       isolation: "none",
     });
+    activeSessions.push(sessionId);
+    return sessionId;
+  }
 
-    expect(sessionId).toMatch(/^term-\d+$/);
-
-    // Check session status
-    const status = provider.getSessionStatus(sessionId);
-    expect(status).toBeTruthy();
-    expect(status?.running).toBe(true);
-
-    // Send a command
-    provider.sendInput(sessionId, "echo hello");
-
-    // Wait a bit for output
-    await new Promise(resolve => setTimeout(resolve, 100));
-
-    // Collect output
-    const output = provider.collectOutput(sessionId, 0, {
+  /** Wait until session output contains needle or timeout */
+  async function waitForOutput(sessionId: string, needle: string, fromPosition = 0, timeoutMs = 3000) {
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+      const result = provider.collectOutput(sessionId, fromPosition, {
+        minInterval: 0,
+        settleInterval: 0,
+        maxInterval: 1,
+      });
+      if (result.output.includes(needle)) {
+        return result;
+      }
+      await new Promise(resolve => setTimeout(resolve, 50));
+    }
+    return provider.collectOutput(sessionId, fromPosition, {
       minInterval: 0,
       settleInterval: 0,
       maxInterval: 1,
     });
+  }
 
-    // With the mock, we expect output to contain "hello"
+  it("should start and interact with a persistent session", async () => {
+    const sessionId = await startSession();
+
+    expect(sessionId).toMatch(/^term-\d+$/);
+
+    const status = provider.getSessionStatus(sessionId);
+    expect(status).toBeTruthy();
+    expect(status?.running).toBe(true);
+
+    provider.sendInput(sessionId, "echo hello");
+
+    const output = await waitForOutput(sessionId, "hello");
     expect(output.output).toContain("hello");
     expect(output.newPosition).toBeGreaterThan(0);
 
-    // Terminate session
     provider.terminateSession(sessionId);
+    activeSessions.splice(activeSessions.indexOf(sessionId), 1);
 
-    // Verify session is gone
     const statusAfter = provider.getSessionStatus(sessionId);
     expect(statusAfter).toBeNull();
   });
 
   it("should handle multiple concurrent sessions", async () => {
-    const session1 = await provider.startInteractiveSession({
-      timeoutSeconds: 0,
-      workingDirectory: testDir,
-      isolation: "none",
-    });
-
-    const session2 = await provider.startInteractiveSession({
-      timeoutSeconds: 0,
-      workingDirectory: testDir,
-      isolation: "none",
-    });
+    const session1 = await startSession();
+    const session2 = await startSession();
 
     expect(session1).not.toBe(session2);
 
@@ -150,40 +119,26 @@ describe("PosixTerminalProvider Persistent Sessions", () => {
 
     provider.terminateSession(session1);
     provider.terminateSession(session2);
+    activeSessions.length = 0;
   });
 
   it("should track output position correctly", async () => {
-    const sessionId = await provider.startInteractiveSession({
-      timeoutSeconds: 0,
-      workingDirectory: testDir,
-      isolation: "none",
-    });
+    const sessionId = await startSession();
 
     provider.sendInput(sessionId, "echo first");
-    await new Promise(resolve => setTimeout(resolve, 100));
-
-    const output1 = provider.collectOutput(sessionId, 0, {
-      minInterval: 0,
-      settleInterval: 0,
-      maxInterval: 1,
-    });
+    const output1 = await waitForOutput(sessionId, "first");
 
     expect(output1.output).toContain("first");
     const pos1 = output1.newPosition;
 
     provider.sendInput(sessionId, "echo second");
-    await new Promise(resolve => setTimeout(resolve, 100));
-
-    const output2 = provider.collectOutput(sessionId, pos1, {
-      minInterval: 0,
-      settleInterval: 0,
-      maxInterval: 1,
-    });
+    const output2 = await waitForOutput(sessionId, "second", pos1);
 
     expect(output2.output).toContain("second");
     expect(output2.output).not.toContain("first");
 
     provider.terminateSession(sessionId);
+    activeSessions.splice(activeSessions.indexOf(sessionId), 1);
   });
 
   it("should support the none isolation level", () => {
