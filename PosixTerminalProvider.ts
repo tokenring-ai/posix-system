@@ -4,6 +4,7 @@ import type { TerminalService } from "@tokenring-ai/terminal";
 import type {
   ExecuteCommandOptions,
   ExecuteCommandResult,
+  InteractiveTerminalOptions,
   InteractiveTerminalOutput,
   InteractiveTerminalProvider,
   OutputWaitOptions,
@@ -19,13 +20,42 @@ const MAX_OUTPUT_BYTES = 1024 * 1024;
 
 interface InteractiveTerminalSession {
   id: string;
-  process: ReturnType<typeof Bun.spawn>;
-  terminal: Bun.Terminal;
+  process: Bun.Subprocess;
+  /** The attached pseudo-terminal, or undefined for sessions running on plain pipes. */
+  terminal: Bun.Terminal | undefined;
+  /** Writes to the child's stdin, whichever transport backs the session. */
+  write: (data: string) => void;
+  /** Releases the session's stdio (pty handle or stdin sink). */
+  closeIO: () => void;
   outputBuffer: string;
   lastReadPosition: number;
   startTime: number;
   lastOutputTime: number;
   exitCode?: number | undefined;
+}
+
+/**
+ * Drain a piped stdout/stderr stream into the session buffer.
+ * Uses a streaming decoder so multi-byte characters split across chunk boundaries survive.
+ */
+async function pumpStream(stream: ReadableStream<Uint8Array>, onText: (text: string) => void): Promise<void> {
+  const decoder = new TextDecoder();
+  const reader = stream.getReader();
+  try {
+    for (;;) {
+      const result = await reader.read();
+      if (result.done) break;
+      onText(decoder.decode(result.value, { stream: true }));
+    }
+  } catch {
+    // stream closed out from under us when the process was killed
+  } finally {
+    try {
+      reader.releaseLock();
+    } catch {
+      // already released
+    }
+  }
 }
 
 /**
@@ -252,9 +282,10 @@ export default class PosixTerminalProvider implements InteractiveTerminalProvide
     }
   }
 
-  async startInteractiveSession(options: ExecuteCommandOptions): Promise<string> {
+  async startInteractiveSession(options: InteractiveTerminalOptions): Promise<string> {
     const id = `term-${this.nextId++}`;
     const cwd = options.workingDirectory;
+    const usePty = options.pty ?? this.options.interactiveMode === "pty";
 
     const shell = process.env.SHELL || "/bin/bash";
     const wrapped = this.wrapWithIsolation(shell, [], options);
@@ -263,7 +294,7 @@ export default class PosixTerminalProvider implements InteractiveTerminalProvide
       this.terminalService,
       "[startInteractiveSession]",
       id,
-      "spawning shell:",
+      `spawning shell (${usePty ? "pty" : "pipe"}):`,
       wrapped.command,
       "args: ",
       wrapped.args.join(" "),
@@ -271,51 +302,112 @@ export default class PosixTerminalProvider implements InteractiveTerminalProvide
       cwd,
     );
 
-    // Create session first so the terminal data callback can append to it
+    // Create session first so the output callbacks can append to it
     const session: InteractiveTerminalSession = {
       id,
       // placeholders assigned after spawn
-      process: null as unknown as ReturnType<typeof Bun.spawn>,
-      terminal: null as unknown as Bun.Terminal,
+      process: null as unknown as Bun.Subprocess,
+      terminal: undefined,
+      write: () => {
+        throw new Error(`Session ${id} is not ready`);
+      },
+      closeIO: () => {},
       outputBuffer: "",
       lastReadPosition: 0,
       startTime: Date.now(),
       lastOutputTime: Date.now(),
     };
 
-    const proc = Bun.spawn([wrapped.command, ...wrapped.args], {
-      cwd,
-      env: {
-        ...process.env,
-        TERM: "dumb",
-        NO_COLOR: "1",
-      },
-      terminal: {
-        cols: 80,
-        rows: 24,
-        name: "dumb",
-        data(_terminal, data) {
-          session.outputBuffer += textDecoder.decode(data);
-          session.lastOutputTime = Date.now();
-        },
-      },
-      onExit(_subprocess, exitCode) {
-        // exitCode is null when killed by signal; mark complete either way
-        session.exitCode = exitCode ?? 0;
-      },
-    });
+    const appendOutput = (text: string) => {
+      session.outputBuffer += text;
+      session.lastOutputTime = Date.now();
+    };
 
-    if (!proc.terminal) {
-      try {
-        proc.kill("SIGKILL");
-      } catch {
-        // ignore
+    const onExit = (_subprocess: Bun.Subprocess, exitCode: number | null) => {
+      // exitCode is null when killed by signal; mark complete either way
+      session.exitCode = exitCode ?? 0;
+    };
+
+    if (usePty) {
+      const ptyDecoder = new TextDecoder();
+      const proc = Bun.spawn([wrapped.command, ...wrapped.args], {
+        cwd,
+        env: {
+          ...process.env,
+          TERM: this.options.terminalType,
+        },
+        terminal: {
+          cols: options.cols ?? this.options.cols,
+          rows: options.rows ?? this.options.rows,
+          name: this.options.terminalType,
+          data(_terminal, data) {
+            appendOutput(ptyDecoder.decode(data, { stream: true }));
+          },
+        },
+        onExit,
+      });
+
+      const terminal = proc.terminal;
+      if (!terminal) {
+        try {
+          proc.kill("SIGKILL");
+        } catch {
+          // ignore
+        }
+        throw new Error("Bun.spawn failed to attach a terminal for interactive session");
       }
-      throw new Error("Bun.spawn failed to attach a terminal for interactive session");
+
+      session.process = proc;
+      session.terminal = terminal;
+      session.write = data => {
+        terminal.write(data);
+      };
+      session.closeIO = () => {
+        if (!terminal.closed) terminal.close();
+      };
+    } else {
+      const proc = Bun.spawn([wrapped.command, ...wrapped.args], {
+        cwd,
+        env: {
+          ...process.env,
+          TERM: "dumb",
+          NO_COLOR: "1",
+        },
+        stdin: "pipe",
+        stdout: "pipe",
+        stderr: "pipe",
+        onExit,
+      });
+
+      const { stdin, stdout, stderr } = proc;
+      if (!stdin || typeof stdin === "number" || !(stdout instanceof ReadableStream) || !(stderr instanceof ReadableStream)) {
+        try {
+          proc.kill("SIGKILL");
+        } catch {
+          // ignore
+        }
+        throw new Error("Bun.spawn failed to attach pipes for interactive session");
+      }
+
+      session.process = proc;
+      session.write = data => {
+        // FileSink buffers; flush pushes the line to the child now rather than at some later fill.
+        void stdin.write(data);
+        void stdin.flush();
+      };
+      session.closeIO = () => {
+        try {
+          void stdin.end();
+        } catch {
+          // already closed
+        }
+      };
+
+      // Both streams land in one buffer, matching how a pty interleaves them.
+      void pumpStream(stdout, appendOutput);
+      void pumpStream(stderr, appendOutput);
     }
 
-    session.process = proc;
-    session.terminal = proc.terminal;
     this.sessions.set(id, session);
 
     // Wait briefly for initial prompt to appear
@@ -327,7 +419,20 @@ export default class PosixTerminalProvider implements InteractiveTerminalProvide
   sendInput(sessionId: string, input: string): void {
     const session = this.sessions.get(sessionId);
     if (!session) throw new Error(`Session ${sessionId} not found`);
-    session.terminal.write(`${input}\n`);
+    // Callers are split: the tools send bare commands, the web UI sends its own newline.
+    // Terminate the line here only when the caller has not already done so.
+    session.write(input.endsWith("\n") ? input : `${input}\n`);
+  }
+
+  /**
+   * Tell the shell its window changed size. No-op for pipe-mode sessions, which have no
+   * window for the child to query.
+   */
+  resizeSession(sessionId: string, cols: number, rows: number): void {
+    const session = this.sessions.get(sessionId);
+    if (!session) throw new Error(`Session ${sessionId} not found`);
+    if (!session.terminal || session.terminal.closed) return;
+    session.terminal.resize(cols, rows);
   }
 
   collectOutput(sessionId: string, fromPosition: number, _waitOptions: OutputWaitOptions): InteractiveTerminalOutput {
@@ -356,9 +461,7 @@ export default class PosixTerminalProvider implements InteractiveTerminalProvide
       // already exited
     }
     try {
-      if (!session.terminal.closed) {
-        session.terminal.close();
-      }
+      session.closeIO();
     } catch {
       // already closed
     }
@@ -378,7 +481,11 @@ export default class PosixTerminalProvider implements InteractiveTerminalProvide
     };
   }
 
-  private wrapWithIsolation(command: string, args: string[], options: ExecuteCommandOptions): { command: string; args: string[] } {
+  private wrapWithIsolation(
+    command: string,
+    args: string[],
+    options: { workingDirectory: string; isolation: TerminalIsolationLevel },
+  ): { command: string; args: string[] } {
     const isolationLevel = options.isolation;
     if (isolationLevel === "none") {
       return { command: command, args };

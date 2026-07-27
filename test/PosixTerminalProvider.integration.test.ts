@@ -4,6 +4,7 @@ import { TerminalConfigSchema } from "@tokenring-ai/terminal/schema";
 import TerminalService from "@tokenring-ai/terminal/TerminalService";
 import fs from "fs-extra";
 import PosixTerminalProvider from "../PosixTerminalProvider";
+import { PosixTerminalProviderOptionsSchema } from "../schema";
 
 /**
  * Integration tests for PosixTerminalProvider that test the complete flow
@@ -38,7 +39,7 @@ describe("PosixTerminalProvider Integration Tests", () => {
 
     terminalService = new TerminalService(terminalConfig);
     app.addServices(terminalService);
-    service = new PosixTerminalProvider(app, terminalService, { sandboxProvider: "auto" });
+    service = new PosixTerminalProvider(app, terminalService, PosixTerminalProviderOptionsSchema.parse({ sandboxProvider: "auto" }));
   });
 
   describe("Shell Commands", () => {

@@ -1,4 +1,3 @@
-import EnhancedMap from "@tokenring-ai/utility/map/enhancedMap";
 import { EventEmitter } from "node:events";
 import { type FSWatcher as NodeFSWatcher, watch as watchFileSystem } from "node:fs";
 import path from "node:path";
@@ -12,6 +11,7 @@ import type {
   WatchOptions,
 } from "@tokenring-ai/filesystem/FileSystemProvider";
 import { arrayableToArray } from "@tokenring-ai/utility/array/arrayable";
+import EnhancedMap from "@tokenring-ai/utility/map/enhancedMap";
 import { Glob } from "bun";
 import fs from "fs-extra";
 import type { PosixFileSystemProviderOptions } from "./schema.ts";
@@ -201,7 +201,7 @@ class PosixFileSystemWatcher extends EventEmitter {
   private clearPendingEvent(filePath: string): void {
     const pendingEvent = this.pendingEvents.deleteAndReturnItem(filePath);
     if (pendingEvent) {
-      clearTimeout(pendingEvent.timeout);;
+      clearTimeout(pendingEvent.timeout);
     }
   }
 

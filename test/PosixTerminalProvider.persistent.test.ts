@@ -4,6 +4,7 @@ import { TerminalConfigSchema } from "@tokenring-ai/terminal/schema";
 import TerminalService from "@tokenring-ai/terminal/TerminalService";
 import fs from "fs-extra";
 import PosixTerminalProvider from "../PosixTerminalProvider";
+import { PosixTerminalProviderOptionsSchema } from "../schema";
 
 describe("PosixTerminalProvider Persistent Sessions", () => {
   const testDir = "/tmp/posix-terminal-persistent-test";
@@ -35,7 +36,7 @@ describe("PosixTerminalProvider Persistent Sessions", () => {
 
     terminalService = new TerminalService(terminalConfig);
     app.addServices(terminalService);
-    provider = new PosixTerminalProvider(app, terminalService, { sandboxProvider: "auto" });
+    provider = new PosixTerminalProvider(app, terminalService, PosixTerminalProviderOptionsSchema.parse({ sandboxProvider: "auto" }));
     activeSessions.length = 0;
   });
 
@@ -52,11 +53,11 @@ describe("PosixTerminalProvider Persistent Sessions", () => {
     }
   });
 
-  async function startSession() {
+  async function startSession(pty?: boolean) {
     const sessionId = await provider.startInteractiveSession({
-      timeoutSeconds: 0,
       workingDirectory: testDir,
       isolation: "none",
+      ...(pty !== undefined && { pty }),
     });
     activeSessions.push(sessionId);
     return sessionId;
@@ -136,6 +137,46 @@ describe("PosixTerminalProvider Persistent Sessions", () => {
 
     expect(output2.output).toContain("second");
     expect(output2.output).not.toContain("first");
+
+    provider.terminateSession(sessionId);
+    activeSessions.splice(activeSessions.indexOf(sessionId), 1);
+  });
+
+  it("should run a session on plain pipes when pty is disabled", async () => {
+    const sessionId = await startSession(false);
+
+    provider.sendInput(sessionId, "echo piped-hello");
+    const output = await waitForOutput(sessionId, "piped-hello");
+
+    expect(output.output).toContain("piped-hello");
+    // Without a pty the shell neither echoes input nor emits escape sequences.
+    expect(output.output).not.toContain("\x1b[");
+    expect(output.output).not.toContain("echo piped-hello");
+
+    provider.terminateSession(sessionId);
+    activeSessions.splice(activeSessions.indexOf(sessionId), 1);
+  });
+
+  it("should echo input back when a pty is attached", async () => {
+    const sessionId = await startSession(true);
+
+    provider.sendInput(sessionId, "echo pty-hello");
+    const output = await waitForOutput(sessionId, "pty-hello");
+
+    // The pty line discipline echoes the command itself, not just its result.
+    expect(output.output).toContain("echo pty-hello");
+
+    provider.terminateSession(sessionId);
+    activeSessions.splice(activeSessions.indexOf(sessionId), 1);
+  });
+
+  it("should not submit a blank line when the caller already terminated the input", async () => {
+    const sessionId = await startSession(false);
+
+    provider.sendInput(sessionId, "echo trailing\n");
+    const output = await waitForOutput(sessionId, "trailing");
+
+    expect(output.output).toContain("trailing");
 
     provider.terminateSession(sessionId);
     activeSessions.splice(activeSessions.indexOf(sessionId), 1);
