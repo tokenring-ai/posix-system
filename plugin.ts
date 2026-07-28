@@ -16,7 +16,12 @@ export default {
   displayName: "POSIX System",
   version: packageJSON.version,
   description: packageJSON.description,
-  install(app, config) {
+  install(_app) {
+    // Providers are registered in reconfigure once config is available.
+  },
+  reconfigure(app, config) {
+    // register overwrites via set, so reconfigure is safe to call repeatedly.
+    // waitForService covers late install order of FileSystemService/TerminalService.
     app.waitForService(FileSystemService, fileSystemService => {
       fileSystemService.registerFileSystemProvider("posix", new PosixFileSystemProvider(config.posix.filesystem));
     });
