@@ -221,13 +221,12 @@ export default class PosixFileSystemProvider implements FileSystemProvider {
   constructor(readonly options: PosixFileSystemProviderOptions = {}) {}
 
   async writeFile(filePath: string, content: string | Buffer): Promise<boolean> {
-    await fs.ensureDir(path.dirname(filePath));
-    await fs.writeFile(filePath, content);
+    await fs.outputFile(filePath, content);
     return true;
   }
 
   async appendFile(filePath: string, finalContent: string | Buffer): Promise<boolean> {
-    await fs.ensureDir(path.dirname(filePath));
+    await fs.ensureFile(filePath);
     await fs.appendFile(filePath, finalContent);
     return true;
   }
