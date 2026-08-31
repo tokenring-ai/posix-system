@@ -1,3 +1,4 @@
+import os from "node:os";
 import { setTimeout as delay } from "node:timers/promises";
 import type TokenRingApp from "@tokenring-ai/app";
 import type { TerminalService } from "@tokenring-ai/terminal";
@@ -18,6 +19,16 @@ import type { PosixTerminalProviderOptions } from "./schema.ts";
 const textDecoder = new TextDecoder();
 const MAX_OUTPUT_BYTES = 1024 * 1024;
 
+/** Map a Bun onExit signal (number or "SIGTERM") to a shell-style exit code. */
+function exitCodeFromSignal(signalCode: number | string | null | undefined): number {
+  if (typeof signalCode === "number") return 128 + signalCode;
+  if (typeof signalCode === "string") {
+    const number = os.constants.signals[signalCode as keyof typeof os.constants.signals];
+    if (typeof number === "number") return 128 + number;
+  }
+  return 1;
+}
+
 interface InteractiveTerminalSession {
   id: string;
   process: Bun.Subprocess;
@@ -28,7 +39,6 @@ interface InteractiveTerminalSession {
   /** Releases the session's stdio (pty handle or stdin sink). */
   closeIO: () => void;
   outputBuffer: string;
-  lastReadPosition: number;
   startTime: number;
   lastOutputTime: number;
   exitCode?: number | undefined;
@@ -99,8 +109,11 @@ async function spawnCommand(
   const timer =
     options.timeoutMs > 0
       ? setTimeout(() => {
-          timedOut = true;
-          killTree();
+          // proc.exited is a Promise (always truthy); exitCode is null while still running.
+          if (proc.exitCode === null) {
+            timedOut = true;
+            killTree();
+          }
         }, options.timeoutMs)
       : undefined;
 
@@ -313,7 +326,6 @@ export default class PosixTerminalProvider implements InteractiveTerminalProvide
       },
       closeIO: () => {},
       outputBuffer: "",
-      lastReadPosition: 0,
       startTime: Date.now(),
       lastOutputTime: Date.now(),
     };
@@ -323,9 +335,10 @@ export default class PosixTerminalProvider implements InteractiveTerminalProvide
       session.lastOutputTime = Date.now();
     };
 
-    const onExit = (_subprocess: Bun.Subprocess, exitCode: number | null) => {
-      // exitCode is null when killed by signal; mark complete either way
-      session.exitCode = exitCode ?? 0;
+    const onExit = (_subprocess: Bun.Subprocess, exitCode: number | null, signalCode: number | string | null) => {
+      // Bun reports null when the process was killed by a signal. Public APIs only
+      // accept a number, so use the shell convention 128+signal (or 1 if unknown).
+      session.exitCode = exitCode ?? exitCodeFromSignal(signalCode);
     };
 
     if (usePty) {
@@ -392,20 +405,21 @@ export default class PosixTerminalProvider implements InteractiveTerminalProvide
       session.process = proc;
       session.write = data => {
         // FileSink buffers; flush pushes the line to the child now rather than at some later fill.
-        void stdin.write(data);
-        void stdin.flush();
+        // write/flush may return a rejected promise if the child already closed stdin.
+        void Promise.resolve(stdin.write(data)).catch(() => {});
+        void Promise.resolve(stdin.flush()).catch(() => {});
       };
       session.closeIO = () => {
         try {
-          void stdin.end();
+          void Promise.resolve(stdin.end()).catch(() => {});
         } catch {
           // already closed
         }
       };
 
       // Both streams land in one buffer, matching how a pty interleaves them.
-      void pumpStream(stdout, appendOutput);
-      void pumpStream(stderr, appendOutput);
+      void pumpStream(stdout, appendOutput).catch(() => {});
+      void pumpStream(stderr, appendOutput).catch(() => {});
     }
 
     this.sessions.set(id, session);
@@ -521,9 +535,6 @@ export default class PosixTerminalProvider implements InteractiveTerminalProvide
       "--ro-bind",
       "/sbin",
       "/sbin",
-      "--ro-bind",
-      "/etc",
-      "/etc",
       "--ro-bind",
       homeDir,
       homeDir,

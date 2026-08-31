@@ -35,7 +35,7 @@ describe("PosixTerminalProvider Persistent Sessions", () => {
     });
 
     terminalService = new TerminalService(terminalConfig);
-    app.addServices(terminalService);
+    app.addService(TerminalService, terminalService);
     provider = new PosixTerminalProvider(app, terminalService, PosixTerminalProviderOptionsSchema.parse({ sandboxProvider: "auto" }));
     activeSessions.length = 0;
   });

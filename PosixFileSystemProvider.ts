@@ -27,6 +27,7 @@ class PosixFileSystemWatcher extends EventEmitter {
   private readonly watcher: NodeFSWatcher;
   private readonly pendingEvents = new EnhancedMap<string, { event: WatchEvent; timeout: NodeJS.Timeout }>();
   private readonly knownFiles = new Set<string>();
+  private readonly rescanTimers: NodeJS.Timeout[] = [];
   private closed = false;
 
   constructor(
@@ -52,6 +53,10 @@ class PosixFileSystemWatcher extends EventEmitter {
     }
     this.pendingEvents.clear();
     this.knownFiles.clear();
+    for (const timer of this.rescanTimers) {
+      clearTimeout(timer);
+    }
+    this.rescanTimers.length = 0;
   }
 
   private async handleFileSystemEvent(eventType: string, filename: string | Buffer | null): Promise<void> {
@@ -91,10 +96,13 @@ class PosixFileSystemWatcher extends EventEmitter {
 
   private scheduleDirectoryRescan(dir: string): void {
     for (const delay of [25, 75, 150]) {
-      setTimeout(() => {
+      const timer = setTimeout(() => {
+        const index = this.rescanTimers.indexOf(timer);
+        if (index >= 0) this.rescanTimers.splice(index, 1);
         // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- this.closed can be mutated asynchronously by close(); TS narrowing doesn't account for this across await/loop iterations
         if (!this.closed) void this.emitInitialFiles(dir);
       }, delay);
+      this.rescanTimers.push(timer);
     }
   }
 
@@ -239,7 +247,9 @@ export default class PosixFileSystemProvider implements FileSystemProvider {
     if (!stats.isFile()) {
       throw new Error(`Path ${filePath} is not a file`);
     }
-    await fs.remove(filePath);
+    // unlink only removes a file (or symlink). fs.remove would recursively
+    // delete a directory if the path were replaced between the stat and here.
+    await fs.unlink(filePath);
     return true;
   }
 
@@ -342,8 +352,10 @@ export default class PosixFileSystemProvider implements FileSystemProvider {
 
       return files.filter(file => !ignoreFilter(file));
     } catch (err) {
-      // Glob throws errors if the path does not exist, which sucks
-      if (Error.isError(err) && err.message.includes("ENOENT")) {
+      // Glob throws if the path does not exist. Prefer the syscall code, but
+      // keep the message fallback for errors that only put ENOENT in the text.
+      const code = (err as { code?: string }).code;
+      if (Error.isError(err) && (code === "ENOENT" || err.message.includes("ENOENT"))) {
         return [];
       }
       throw err;
@@ -367,13 +379,6 @@ export default class PosixFileSystemProvider implements FileSystemProvider {
       throw new Error("Search string is required");
     }
 
-    const allFiles: string[] = [];
-    for await (const file of this.getDirectoryTree(cwd, { ignoreFilter })) {
-      allFiles.push(file);
-    }
-
-    const filesToSearch = allFiles.filter(file => !ignoreFilter(file));
-
     const results: Array<{
       file: string;
       line: number;
@@ -381,7 +386,8 @@ export default class PosixFileSystemProvider implements FileSystemProvider {
       content: string | null;
     }> = [];
 
-    for (const file of filesToSearch) {
+    // getDirectoryTree already applies ignoreFilter; search as files are discovered.
+    for await (const file of this.getDirectoryTree(cwd, { ignoreFilter })) {
       try {
         const content = await this.readFile(file);
         if (!content) continue;

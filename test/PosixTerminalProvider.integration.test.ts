@@ -38,7 +38,7 @@ describe("PosixTerminalProvider Integration Tests", () => {
     });
 
     terminalService = new TerminalService(terminalConfig);
-    app.addServices(terminalService);
+    app.addService(TerminalService, terminalService);
     service = new PosixTerminalProvider(app, terminalService, PosixTerminalProviderOptionsSchema.parse({ sandboxProvider: "auto" }));
   });
 
