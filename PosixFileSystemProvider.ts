@@ -7,6 +7,7 @@ import type {
   GlobOptions,
   GrepOptions,
   GrepResult,
+  IgnorePredicate,
   StatLike,
   WatchOptions,
 } from "@tokenring-ai/filesystem/FileSystemProvider";
@@ -18,7 +19,7 @@ import type { PosixFileSystemProviderOptions } from "./schema.ts";
 
 type WatchEvent = "add" | "change";
 type PosixWatchOptions = {
-  ignoreFilter: (path: string) => boolean;
+  ignoreFilter: IgnorePredicate;
   pollInterval: number;
   stabilityThreshold: number;
 };
@@ -64,7 +65,7 @@ class PosixFileSystemWatcher extends EventEmitter {
     if (this.closed || !filename) return;
 
     const filePath = this.resolveFilePath(filename);
-    if (this.isIgnored(filePath)) return;
+    if (await this.isIgnored(filePath)) return;
 
     try {
       const stats = await fs.stat(filePath);
@@ -126,7 +127,7 @@ class PosixFileSystemWatcher extends EventEmitter {
       if (this.closed) return;
 
       const entryPath = path.join(dir, entry.name);
-      if (this.isIgnored(entryPath)) continue;
+      if (await this.isIgnored(entryPath, entry.isDirectory())) continue;
 
       if (entry.isDirectory()) {
         await this.emitInitialFiles(entryPath);
@@ -154,7 +155,7 @@ class PosixFileSystemWatcher extends EventEmitter {
       if (this.closed) return;
 
       try {
-        if (this.isIgnored(filePath)) {
+        if (await this.isIgnored(filePath)) {
           this.pendingEvents.delete(filePath);
           return;
         }
@@ -213,9 +214,9 @@ class PosixFileSystemWatcher extends EventEmitter {
     }
   }
 
-  private isIgnored(filePath: string): boolean {
+  private async isIgnored(filePath: string, isDirectory?: boolean): Promise<boolean> {
     try {
-      return this.options.ignoreFilter(filePath);
+      return await this.options.ignoreFilter(filePath, isDirectory);
     } catch {
       return true;
     }
@@ -350,7 +351,11 @@ export default class PosixFileSystemProvider implements FileSystemProvider {
     try {
       const files = await Array.fromAsync(glob.scan({ dot: true, onlyFiles: !includeDirectories, absolute: true }));
 
-      return files.filter(file => !ignoreFilter(file));
+      const results: string[] = [];
+      for (const file of files) {
+        if (!(await ignoreFilter(file))) results.push(file);
+      }
+      return results;
     } catch (err) {
       // Glob throws if the path does not exist. Prefer the syscall code, but
       // keep the message fallback for errors that only put ENOENT in the text.
@@ -370,8 +375,13 @@ export default class PosixFileSystemProvider implements FileSystemProvider {
     return new PosixFileSystemWatcher(dir, { ignoreFilter, pollInterval, stabilityThreshold });
   }
 
+  async realpath(absolutePath: string): Promise<string> {
+    return await fs.realpath(absolutePath);
+  }
+
   async grep(searchString: string | string[], options: GrepOptions): Promise<GrepResult[]> {
-    const { ignoreFilter, includeContent = {}, cwd = process.cwd() } = options;
+    // No implicit default — the caller always names the absolute walk root.
+    const { ignoreFilter, includeContent = {}, cwd } = options;
     const { linesBefore = 0, linesAfter = 0 } = includeContent;
     const searchStrings = arrayableToArray(searchString);
 
@@ -426,7 +436,7 @@ export default class PosixFileSystemProvider implements FileSystemProvider {
 
     for (const item of items) {
       const itemPath = path.join(dir, item.name);
-      if (ignoreFilter(itemPath)) continue;
+      if (await ignoreFilter(itemPath, item.isDirectory())) continue;
 
       if (item.isDirectory()) {
         yield `${itemPath}/`;

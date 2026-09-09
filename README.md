@@ -266,6 +266,8 @@ Both methods return an `ExecuteCommandResult` discriminated union on `status`:
 |-----------|------|-------------|
 | `timeoutSeconds` | `number` | Timeout in seconds; `0` means no timeout |
 | `workingDirectory` | `string` | Working directory for the command |
+| `writablePaths` | `string[]` | Allow-list write entries; the sandbox write-binds each of these (plus the cwd) |
+| `readablePaths` | `string[]` | Read-only allow-list entries |
 | `isolation` | `TerminalIsolationLevel` | Isolation level: `"none"`, `"sandbox"`, or `"container"` |
 
 **Interactive Sessions:**
@@ -284,6 +286,8 @@ Both methods return an `ExecuteCommandResult` discriminated union on `status`:
 | Parameter | Type | Description |
 |-----------|------|-------------|
 | `workingDirectory` | `string` | Working directory for the session |
+| `writablePaths` | `string[]` | Allow-list write entries; the sandbox write-binds each of these (plus the cwd) |
+| `readablePaths` | `string[]` | Read-only allow-list entries |
 | `isolation` | `TerminalIsolationLevel` | Isolation level for the session |
 | `pty` | `boolean` | Attach a pseudo-terminal; overrides `interactiveMode` config (default: provider's `interactiveMode`) |
 | `cols` | `number` | PTY width in columns (default: provider's `cols`) |

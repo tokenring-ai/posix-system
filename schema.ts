@@ -32,6 +32,15 @@ export const PosixTerminalProviderOptionsSchema = z.object({
     .min(1)
     .default(30)
     .meta({ description: "Default pty height in rows" } satisfies ConfigFieldMeta),
+  scrollbackLimit: z
+    .number()
+    .int()
+    .min(1)
+    .default(1024 * 1024)
+    .meta({
+      unit: "chars",
+      description: "Maximum interactive session output retained per terminal; older output is dropped once exceeded",
+    } satisfies ConfigFieldMeta),
 });
 export type PosixTerminalProviderOptions = z.output<typeof PosixTerminalProviderOptionsSchema>;
 

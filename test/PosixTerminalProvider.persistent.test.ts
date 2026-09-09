@@ -34,7 +34,7 @@ describe("PosixTerminalProvider Persistent Sessions", () => {
       },
     });
 
-    terminalService = new TerminalService(terminalConfig);
+    terminalService = new TerminalService(terminalConfig, app);
     app.addService(TerminalService, terminalService);
     provider = new PosixTerminalProvider(app, terminalService, PosixTerminalProviderOptionsSchema.parse({ sandboxProvider: "auto" }));
     activeSessions.length = 0;
@@ -56,6 +56,8 @@ describe("PosixTerminalProvider Persistent Sessions", () => {
   async function startSession(pty?: boolean) {
     const sessionId = await provider.startInteractiveSession({
       workingDirectory: testDir,
+      writablePaths: [testDir],
+      readablePaths: [],
       isolation: "none",
       ...(pty !== undefined && { pty }),
     });

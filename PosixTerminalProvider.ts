@@ -1,3 +1,4 @@
+import { existsSync, realpathSync } from "node:fs";
 import os from "node:os";
 import { setTimeout as delay } from "node:timers/promises";
 import type TokenRingApp from "@tokenring-ai/app";
@@ -38,7 +39,10 @@ interface InteractiveTerminalSession {
   write: (data: string) => void;
   /** Releases the session's stdio (pty handle or stdin sink). */
   closeIO: () => void;
+  /** Retained tail of the output, capped at `scrollbackLimit`; the rest has been dropped. */
   outputBuffer: string;
+  /** Cumulative length of all output ever produced, including output already dropped from `outputBuffer`. */
+  totalOutputLength: number;
   startTime: number;
   lastOutputTime: number;
   exitCode?: number | undefined;
@@ -326,12 +330,18 @@ export default class PosixTerminalProvider implements InteractiveTerminalProvide
       },
       closeIO: () => {},
       outputBuffer: "",
+      totalOutputLength: 0,
       startTime: Date.now(),
       lastOutputTime: Date.now(),
     };
 
+    const scrollbackLimit = this.options.scrollbackLimit;
     const appendOutput = (text: string) => {
       session.outputBuffer += text;
+      session.totalOutputLength += text.length;
+      if (session.outputBuffer.length > scrollbackLimit) {
+        session.outputBuffer = session.outputBuffer.slice(session.outputBuffer.length - scrollbackLimit);
+      }
       session.lastOutputTime = Date.now();
     };
 
@@ -453,8 +463,13 @@ export default class PosixTerminalProvider implements InteractiveTerminalProvide
     const session = this.sessions.get(sessionId);
     if (!session) throw new Error(`Session ${sessionId} not found`);
 
-    const output = session.outputBuffer.substring(fromPosition);
-    const newPosition = session.outputBuffer.length;
+    // outputBuffer only retains the last `scrollbackLimit` chars; positions are absolute
+    // over totalOutputLength, so translate fromPosition into the retained window. A
+    // fromPosition older than the trimmed prefix clamps to the earliest output still held.
+    const trimmedLength = session.totalOutputLength - session.outputBuffer.length;
+    const relativeFrom = Math.max(0, fromPosition - trimmedLength);
+    const output = session.outputBuffer.substring(relativeFrom);
+    const newPosition = session.totalOutputLength;
     const isComplete = session.exitCode !== undefined;
 
     return {
@@ -490,15 +505,36 @@ export default class PosixTerminalProvider implements InteractiveTerminalProvide
       id: session.id,
       running: session.exitCode === undefined,
       startTime: session.startTime,
-      outputLength: session.outputBuffer.length,
+      outputLength: session.totalOutputLength,
       exitCode: session.exitCode,
     };
+  }
+
+  /**
+   * Existing paths only — bwrap fails the whole spawn on a missing bind
+   * source. Resolved to real paths because sandbox-exec subpath rules match
+   * post-symlink paths (macOS /var → /private/var).
+   */
+  private existingPaths(paths: string[], label: string): string[] {
+    const results = new Set<string>();
+    for (const p of paths) {
+      if (existsSync(p)) {
+        try {
+          results.add(realpathSync(p));
+        } catch {
+          results.add(p);
+        }
+      } else {
+        this.app.serviceOutput(this.terminalService, `[sandbox] Skipping missing ${label} path: ${p}`);
+      }
+    }
+    return [...results];
   }
 
   private wrapWithIsolation(
     command: string,
     args: string[],
-    options: { workingDirectory: string; isolation: TerminalIsolationLevel },
+    options: { workingDirectory: string; writablePaths?: string[] | undefined; readablePaths?: string[] | undefined; isolation: TerminalIsolationLevel },
   ): { command: string; args: string[] } {
     const isolationLevel = options.isolation;
     if (isolationLevel === "none") {
@@ -506,15 +542,18 @@ export default class PosixTerminalProvider implements InteractiveTerminalProvide
     }
 
     const cwd = options.workingDirectory;
+    // The session cwd is always writable; allow-list write entries are added on top.
+    const writablePaths = this.existingPaths([...new Set([cwd, ...(options.writablePaths ?? [])])], "writable");
+    const readablePaths = this.existingPaths(options.readablePaths ?? [], "readable");
 
     if (this.sandboxProvider === "sandbox-exec") {
-      return this.wrapWithSandboxExec(command, args, cwd);
+      return this.wrapWithSandboxExec(command, args, writablePaths);
     }
 
-    return this.wrapWithBubbleWrap(command, args, cwd);
+    return this.wrapWithBubbleWrap(command, args, cwd, writablePaths, readablePaths);
   }
 
-  private wrapWithBubbleWrap(command: string, args: string[], cwd: string) {
+  private wrapWithBubbleWrap(command: string, args: string[], cwd: string, writablePaths: string[], readablePaths: string[]) {
     const homeDir = process.env.HOME || "/home/" + process.env.USER;
     const bwrapArgs = [
       "--ro-bind",
@@ -544,34 +583,34 @@ export default class PosixTerminalProvider implements InteractiveTerminalProvide
       "/dev",
       "--tmpfs",
       "/tmp",
-      "--bind",
-      cwd,
-      cwd,
-      "--chdir",
-      cwd,
-      "--unshare-all",
-      "--share-net",
-      "--die-with-parent",
-      command,
-      ...args,
     ];
+
+    // Read-only allow-list entries first, then write binds (later binds win in bwrap).
+    for (const readablePath of readablePaths) {
+      bwrapArgs.push("--ro-bind", readablePath, readablePath);
+    }
+    for (const writablePath of writablePaths) {
+      bwrapArgs.push("--bind", writablePath, writablePath);
+    }
+
+    bwrapArgs.push("--chdir", cwd, "--unshare-all", "--share-net", "--die-with-parent", command, ...args);
 
     return { command: "bwrap", args: bwrapArgs };
   }
 
-  private wrapWithSandboxExec(command: string, args: string[], cwd: string): { command: string; args: string[] } {
+  private wrapWithSandboxExec(command: string, args: string[], writablePaths: string[]): { command: string; args: string[] } {
     const tmpDir = process.env.TMPDIR || "/tmp";
 
     // Escape a path for inclusion in a Lisp-like sandbox profile string literal.
     const esc = (p: string) => p.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
 
     // Deny-by-default profile: allow reads everywhere, restrict writes to the
-    // working directory and temp dirs, and deny outbound network access.
+    // allow-listed write paths and temp dirs, and deny outbound network access.
     const profile = [
       "(version 1)",
       "(allow default)",
       "(deny file-write*)",
-      `(allow file-write* (subpath "${esc(cwd)}"))`,
+      ...writablePaths.map(writablePath => `(allow file-write* (subpath "${esc(writablePath)}"))`),
       `(allow file-write* (subpath "${esc(tmpDir)}"))`,
       '(allow file-write* (subpath "/dev"))',
       '(allow file-write* (subpath "/private/tmp"))',

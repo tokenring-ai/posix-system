@@ -37,7 +37,7 @@ describe("PosixTerminalProvider Integration Tests", () => {
       },
     });
 
-    terminalService = new TerminalService(terminalConfig);
+    terminalService = new TerminalService(terminalConfig, app);
     app.addService(TerminalService, terminalService);
     service = new PosixTerminalProvider(app, terminalService, PosixTerminalProviderOptionsSchema.parse({ sandboxProvider: "auto" }));
   });
@@ -45,7 +45,13 @@ describe("PosixTerminalProvider Integration Tests", () => {
   describe("Shell Commands", () => {
     it("should run shell commands", async () => {
       // Simple command test
-      const result = await service.runScript("echo hello", { timeoutSeconds: 5, workingDirectory: testDir, isolation: "none" });
+      const result = await service.runScript("echo hello", {
+        timeoutSeconds: 5,
+        workingDirectory: testDir,
+        writablePaths: [testDir],
+        readablePaths: [],
+        isolation: "none",
+      });
       expect(result.status).toBe("success");
       if (result.status === "success") {
         expect(result.output).toBe("hello");
@@ -54,7 +60,13 @@ describe("PosixTerminalProvider Integration Tests", () => {
 
     it("should handle command errors gracefully", async () => {
       // Command that should fail
-      const result = await service.runScript("false", { timeoutSeconds: 5, workingDirectory: testDir, isolation: "none" });
+      const result = await service.runScript("false", {
+        timeoutSeconds: 5,
+        workingDirectory: testDir,
+        writablePaths: [testDir],
+        readablePaths: [],
+        isolation: "none",
+      });
       expect(result.status).toBe("badExitCode");
       if (result.status === "badExitCode") {
         expect(result.exitCode).toBe(1);
@@ -62,7 +74,13 @@ describe("PosixTerminalProvider Integration Tests", () => {
     });
 
     it("should handle command execution with executeCommand", async () => {
-      const result = await service.executeCommand("echo", ["test"], { timeoutSeconds: 5, workingDirectory: testDir, isolation: "none" });
+      const result = await service.executeCommand("echo", ["test"], {
+        timeoutSeconds: 5,
+        workingDirectory: testDir,
+        writablePaths: [testDir],
+        readablePaths: [],
+        isolation: "none",
+      });
       expect(result.status).toBe("success");
       if (result.status === "success") {
         expect(result.output).toBe("test");
@@ -73,6 +91,8 @@ describe("PosixTerminalProvider Integration Tests", () => {
       const result = await service.runScript("echo before-timeout; sleep 2; echo after-timeout", {
         timeoutSeconds: 1,
         workingDirectory: testDir,
+        writablePaths: [testDir],
+        readablePaths: [],
         isolation: "none",
       });
 
@@ -86,6 +106,8 @@ describe("PosixTerminalProvider Integration Tests", () => {
       const result = await service.executeCommand("bash", ["-c", "echo partial; sleep 2"], {
         timeoutSeconds: 1,
         workingDirectory: testDir,
+        writablePaths: [testDir],
+        readablePaths: [],
         isolation: "none",
       });
 
