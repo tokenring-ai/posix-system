@@ -13,6 +13,7 @@ import type {
   SessionStatus,
   TerminalIsolationLevel,
 } from "@tokenring-ai/terminal/TerminalProvider";
+import { OscTracker } from "@tokenring-ai/terminal/util/oscTracker";
 import formatLogMessages from "@tokenring-ai/utility/string/formatLogMessage";
 import { which } from "bun";
 import type { PosixTerminalProviderOptions } from "./schema.ts";
@@ -46,6 +47,10 @@ interface InteractiveTerminalSession {
   startTime: number;
   lastOutputTime: number;
   exitCode?: number | undefined;
+  /** Shell-integration side channel: OSC 7 working directory + OSC 133 command exit codes. */
+  oscTracker: OscTracker;
+  cwd?: string | undefined;
+  lastCommandExitCode?: number | undefined;
 }
 
 /**
@@ -181,6 +186,9 @@ export default class PosixTerminalProvider implements InteractiveTerminalProvide
   supportedIsolationLevels: TerminalIsolationLevel[] = ["none"];
   displayName: string;
   private sessions = new Map<string, InteractiveTerminalSession>();
+
+  /** Wake listeners registered via onOutput; fired whenever any session produces output. */
+  private outputListeners = new Set<(sessionId: string) => void>();
   private nextId = 1;
   private readonly sandboxProvider: "none" | "bubblewrap" | "sandbox-exec" = "none";
 
@@ -333,6 +341,7 @@ export default class PosixTerminalProvider implements InteractiveTerminalProvide
       totalOutputLength: 0,
       startTime: Date.now(),
       lastOutputTime: Date.now(),
+      oscTracker: new OscTracker(),
     };
 
     const scrollbackLimit = this.options.scrollbackLimit;
@@ -343,6 +352,14 @@ export default class PosixTerminalProvider implements InteractiveTerminalProvide
         session.outputBuffer = session.outputBuffer.slice(session.outputBuffer.length - scrollbackLimit);
       }
       session.lastOutputTime = Date.now();
+
+      // Shell integration side channel (safe on arbitrary output; sequences split across
+      // chunks are handled by the tracker).
+      const osc = session.oscTracker.feed(text);
+      if (osc.cwd) session.cwd = osc.cwd;
+      if (osc.commandExitCode !== undefined) session.lastCommandExitCode = osc.commandExitCode;
+
+      for (const listener of this.outputListeners) listener(session.id);
     };
 
     const onExit = (_subprocess: Bun.Subprocess, exitCode: number | null, signalCode: number | string | null) => {
@@ -440,11 +457,15 @@ export default class PosixTerminalProvider implements InteractiveTerminalProvide
     return id;
   }
 
-  sendInput(sessionId: string, input: string): void {
+  sendInput(sessionId: string, input: string, options?: { submit?: boolean }): void {
     const session = this.sessions.get(sessionId);
     if (!session) throw new Error(`Session ${sessionId} not found`);
-    // Callers are split: the tools send bare commands, the web UI sends its own newline.
-    // Terminate the line here only when the caller has not already done so.
+    // submit: false is raw keystroke mode — the data is written byte-for-byte. Otherwise the
+    // caller sent a bare command; terminate the line unless it already ends with one.
+    if (options?.submit === false) {
+      session.write(input);
+      return;
+    }
     session.write(input.endsWith("\n") ? input : `${input}\n`);
   }
 
@@ -507,7 +528,13 @@ export default class PosixTerminalProvider implements InteractiveTerminalProvide
       startTime: session.startTime,
       outputLength: session.totalOutputLength,
       exitCode: session.exitCode,
+      cwd: session.cwd,
+      lastCommandExitCode: session.lastCommandExitCode,
     };
+  }
+  onOutput(listener: (sessionId: string) => void): () => void {
+    this.outputListeners.add(listener);
+    return () => this.outputListeners.delete(listener);
   }
 
   /**

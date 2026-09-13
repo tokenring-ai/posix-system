@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import fs from "fs-extra";
 import type TokenRingApp from "@tokenring-ai/app";
 import { TerminalService } from "@tokenring-ai/terminal";
 import { TerminalConfigSchema } from "@tokenring-ai/terminal/schema";
+import fs from "fs-extra";
 import PosixTerminalProvider from "../PosixTerminalProvider.ts";
 import { PosixTerminalProviderOptionsSchema } from "../schema.ts";
 
