@@ -233,7 +233,7 @@ export default class PosixTerminalProvider implements InteractiveTerminalProvide
     try {
       const result = await spawnCommand(wrapped.command, wrapped.args, {
         cwd,
-        env: process.env,
+        env: this.envForIsolation(options.isolation),
         timeoutMs: timeoutSeconds * 1000,
       });
 
@@ -273,11 +273,7 @@ export default class PosixTerminalProvider implements InteractiveTerminalProvide
     try {
       const result = await spawnCommand(wrapped.command, wrapped.args, {
         cwd,
-        env: {
-          ...process.env,
-          TERM: "dumb",
-          NO_COLOR: "1",
-        },
+        env: this.envForIsolation(options.isolation, { TERM: "dumb", NO_COLOR: "1" }),
         timeoutMs: timeoutSeconds * 1000,
       });
 
@@ -372,10 +368,7 @@ export default class PosixTerminalProvider implements InteractiveTerminalProvide
       const ptyDecoder = new TextDecoder();
       const proc = Bun.spawn([wrapped.command, ...wrapped.args], {
         cwd,
-        env: {
-          ...process.env,
-          TERM: this.options.terminalType,
-        },
+        env: this.envForIsolation(options.isolation, { TERM: this.options.terminalType }),
         terminal: {
           cols: options.cols ?? this.options.cols,
           rows: options.rows ?? this.options.rows,
@@ -408,11 +401,7 @@ export default class PosixTerminalProvider implements InteractiveTerminalProvide
     } else {
       const proc = Bun.spawn([wrapped.command, ...wrapped.args], {
         cwd,
-        env: {
-          ...process.env,
-          TERM: "dumb",
-          NO_COLOR: "1",
-        },
+        env: this.envForIsolation(options.isolation, { TERM: "dumb", NO_COLOR: "1" }),
         stdin: "pipe",
         stdout: "pipe",
         stderr: "pipe",
@@ -556,6 +545,43 @@ export default class PosixTerminalProvider implements InteractiveTerminalProvide
       }
     }
     return [...results];
+  }
+
+  /**
+   * Env vars passed into sandboxed commands. The host environment routinely
+   * carries API keys and other secrets, so sandboxes get a fixed allow-list
+   * of variables executables reasonably need; un-sandboxed runs keep the
+   * full host environment.
+   */
+  private static readonly SANDBOX_ENV_KEYS = [
+    "PATH",
+    "HOME",
+    "SHELL",
+    "USER",
+    "LOGNAME",
+    "LANG",
+    "LC_ALL",
+    "LC_CTYPE",
+    "TZ",
+    "TERM",
+    "TMPDIR",
+    "TMP",
+    "TEMP",
+    "NO_COLOR",
+    "CI",
+  ];
+
+  private sandboxedEnv(extra?: Record<string, string>): Record<string, string> {
+    const env: Record<string, string> = {};
+    for (const key of PosixTerminalProvider.SANDBOX_ENV_KEYS) {
+      const value = process.env[key];
+      if (value !== undefined) env[key] = value;
+    }
+    return { ...env, ...extra };
+  }
+
+  private envForIsolation(isolation: TerminalIsolationLevel, extra?: Record<string, string>): Record<string, string | undefined> {
+    return isolation === "none" ? { ...process.env, ...extra } : this.sandboxedEnv(extra);
   }
 
   private wrapWithIsolation(

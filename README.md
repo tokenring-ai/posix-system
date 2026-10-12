@@ -149,6 +149,7 @@ The options schema (`PosixFileSystemProviderOptionsSchema`) is an empty object; 
 | `writeFile` | `writeFile(filePath: string, content: string \| Buffer): Promise<boolean>` | Create or overwrite a file (creates parent directories) |
 | `appendFile` | `appendFile(filePath: string, content: string \| Buffer): Promise<boolean>` | Append content to a file (creates the file if it does not exist) |
 | `deleteFile` | `deleteFile(filePath: string): Promise<boolean>` | Delete a file; throws if the path does not exist or is not a file |
+| `deleteDirectory` | `deleteDirectory(dirPath: string): Promise<boolean>` | Recursively delete a directory; throws for files, symbolic links (checked with `lstat`), missing paths and the filesystem root. Allow-list and protected-root checks are done by `FileSystemService` |
 | `readFile` | `readFile(filePath: string): Promise<Buffer \| null>` | Read file content; returns `null` if the file does not exist or cannot be read |
 | `rename` | `rename(oldPath: string, newPath: string): Promise<boolean>` | Rename or move a file; throws if the source does not exist or the destination already exists |
 | `exists` | `exists(filePath: string): Promise<boolean>` | Check if a path exists |
@@ -179,7 +180,9 @@ The options schema (`PosixFileSystemProviderOptionsSchema`) is an empty object; 
 |-----------|------|-------------|
 | `ignoreFilter` | `(path: string) => boolean` | Returns `true` to exclude a path |
 | `includeContent` | `{ linesBefore?: number; linesAfter?: number }` | Include context lines around matches |
-| `cwd` | `string` | Working directory to search (default: `process.cwd()`) |
+| `cwd` | `string` | Absolute directory to search (required) |
+| `maxResults` | `number` | Stop after this many matching lines |
+| `ignoreCase` | `boolean` | Case-insensitive matching (default: `false`) |
 
 **`getDirectoryTree` options** (`DirectoryTreeOptions`):
 

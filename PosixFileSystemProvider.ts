@@ -29,6 +29,8 @@ class PosixFileSystemWatcher extends EventEmitter {
   private readonly pendingEvents = new EnhancedMap<string, { event: WatchEvent; timeout: NodeJS.Timeout }>();
   private readonly knownFiles = new Set<string>();
   private readonly rescanTimers: NodeJS.Timeout[] = [];
+  /** Periodic safety-net scan; only active on darwin (see constructor). */
+  private readonly rootRescanInterval: NodeJS.Timeout | undefined;
   private closed = false;
 
   constructor(
@@ -44,11 +46,26 @@ class PosixFileSystemWatcher extends EventEmitter {
     setTimeout(() => {
       void this.emitInitialFiles(dir);
     });
+
+    // macOS FSEvents can silently drop events — most often right after the watch
+    // starts, sometimes for good. Re-scan the root periodically so dropped events
+    // still surface as adds; scans never duplicate because knownFiles/pendingEvents
+    // guard emission.
+    if (process.platform === "darwin") {
+      this.rootRescanInterval = setInterval(
+        () => {
+          if (!this.closed) void this.emitInitialFiles(this.dir);
+        },
+        Math.max(this.options.pollInterval, 500),
+      );
+      this.rootRescanInterval.unref();
+    }
   }
 
   close(): void {
     this.closed = true;
     this.watcher.close();
+    if (this.rootRescanInterval) clearInterval(this.rootRescanInterval);
     for (const { timeout } of this.pendingEvents.values()) {
       clearTimeout(timeout);
     }
@@ -62,7 +79,16 @@ class PosixFileSystemWatcher extends EventEmitter {
 
   private async handleFileSystemEvent(eventType: string, filename: string | Buffer | null): Promise<void> {
     // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- this.closed can be mutated asynchronously by close(); TS narrowing doesn't account for this across await/loop iterations
-    if (this.closed || !filename) return;
+    if (this.closed) return;
+
+    if (!filename) {
+      // macOS FSEvents reports some changes — notably directory creates — with a
+      // null filename. Rescan the root so those changes still surface as adds.
+      // Scans only emit for paths never seen before, so this cannot duplicate.
+      void this.emitInitialFiles(this.dir);
+      this.scheduleDirectoryRescan(this.dir);
+      return;
+    }
 
     const filePath = this.resolveFilePath(filename);
     if (await this.isIgnored(filePath)) return;
@@ -254,6 +280,27 @@ export default class PosixFileSystemProvider implements FileSystemProvider {
     return true;
   }
 
+  async deleteDirectory(dirPath: string): Promise<boolean> {
+    if (path.resolve(dirPath) === path.parse(path.resolve(dirPath)).root) {
+      throw new Error(`Refusing to delete the filesystem root`);
+    }
+    let stats: fs.Stats;
+    try {
+      // lstat: a symlink to a directory is not a directory to delete recursively.
+      stats = await fs.lstat(dirPath);
+    } catch {
+      throw new Error(`Directory ${dirPath} does not exist`);
+    }
+    if (stats.isSymbolicLink()) {
+      throw new Error(`Path ${dirPath} is a symbolic link; delete it as a file instead`);
+    }
+    if (!stats.isDirectory()) {
+      throw new Error(`Path ${dirPath} is not a directory`);
+    }
+    await fs.rm(dirPath, { recursive: true, force: false });
+    return true;
+  }
+
   async readFile(filePath: string): Promise<Buffer | null> {
     try {
       return await fs.readFile(filePath);
@@ -381,9 +428,10 @@ export default class PosixFileSystemProvider implements FileSystemProvider {
 
   async grep(searchString: string | string[], options: GrepOptions): Promise<GrepResult[]> {
     // No implicit default — the caller always names the absolute walk root.
-    const { ignoreFilter, includeContent = {}, cwd } = options;
+    const { ignoreFilter, includeContent = {}, cwd, maxResults, ignoreCase = false } = options;
     const { linesBefore = 0, linesAfter = 0 } = includeContent;
     const searchStrings = arrayableToArray(searchString);
+    const needles = ignoreCase ? searchStrings.map(value => value.toLowerCase()) : searchStrings;
 
     if (searchStrings.every(item => !item)) {
       throw new Error("Search string is required");
@@ -398,6 +446,8 @@ export default class PosixFileSystemProvider implements FileSystemProvider {
 
     // getDirectoryTree already applies ignoreFilter; search as files are discovered.
     for await (const file of this.getDirectoryTree(cwd, { ignoreFilter })) {
+      if (maxResults !== undefined && results.length >= maxResults) break;
+      if (file.endsWith("/")) continue;
       try {
         const content = await this.readFile(file);
         if (!content) continue;
@@ -405,8 +455,9 @@ export default class PosixFileSystemProvider implements FileSystemProvider {
 
         for (let lineNum = 0; lineNum < lines.length; lineNum++) {
           const line = lines[lineNum]!;
+          const haystack = ignoreCase ? line.toLowerCase() : line;
 
-          if (searchStrings.some(value => value && line.includes(value))) {
+          if (needles.some(value => value && haystack.includes(value))) {
             const startLine = Math.max(0, lineNum - linesBefore);
             const endLine = Math.min(lines.length - 1, lineNum + linesAfter);
 
@@ -421,6 +472,7 @@ export default class PosixFileSystemProvider implements FileSystemProvider {
               match: line,
               content: contextContent,
             });
+            if (maxResults !== undefined && results.length >= maxResults) break;
           }
         }
       } catch {

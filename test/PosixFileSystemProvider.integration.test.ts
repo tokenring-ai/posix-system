@@ -136,6 +136,45 @@ describe("PosixFileSystemProvider Integration Tests", () => {
     });
   });
 
+  describe("Directory delete", () => {
+    it("recursively deletes a directory and its contents", async () => {
+      const dir = path.resolve(testDir, "build");
+      await service.writeFile(path.join(dir, "a.txt"), "a");
+      await service.writeFile(path.join(dir, "nested", "b.txt"), "b");
+
+      expect(await service.deleteDirectory(dir)).toBe(true);
+      expect(await service.exists(dir)).toBe(false);
+      expect(await service.exists(testDir)).toBe(true);
+    });
+
+    it("refuses files, symlinks, missing paths and the filesystem root", async () => {
+      const file = path.resolve(testDir, "file.txt");
+      await service.writeFile(file, "x");
+      const target = path.resolve(testDir, "real");
+      await service.writeFile(path.join(target, "keep.txt"), "keep");
+      const link = path.resolve(testDir, "link");
+      await fs.symlink(target, link);
+
+      await expect(service.deleteDirectory(file)).rejects.toThrow(/not a directory/);
+      await expect(service.deleteDirectory(link)).rejects.toThrow(/symbolic link/);
+      await expect(service.deleteDirectory(path.resolve(testDir, "missing"))).rejects.toThrow(/does not exist/);
+      await expect(service.deleteDirectory("/")).rejects.toThrow(/root/);
+      expect(await service.exists(path.join(target, "keep.txt"))).toBe(true);
+    });
+  });
+
+  describe("Grep limits", () => {
+    it("stops at maxResults and supports case-insensitive matching", async () => {
+      await service.writeFile(path.resolve(testDir, "a.txt"), "Needle one\nneedle two\nnothing\nNEEDLE three\n");
+      const all = await service.grep("needle", { cwd: testDir, ignoreFilter: () => false, ignoreCase: true });
+      expect(all.map(result => result.line)).toEqual([1, 2, 4]);
+      const limited = await service.grep("needle", { cwd: testDir, ignoreFilter: () => false, ignoreCase: true, maxResults: 2 });
+      expect(limited.map(result => result.line)).toEqual([1, 2]);
+      const caseSensitive = await service.grep("needle", { cwd: testDir, ignoreFilter: () => false });
+      expect(caseSensitive.map(result => result.line)).toEqual([2]);
+    });
+  });
+
   describe("Watch Operations", () => {
     it("should detect files created inside directories added after watching starts", async () => {
       const watcher = await service.watch(testDir, {
