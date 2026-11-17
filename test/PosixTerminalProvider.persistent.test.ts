@@ -203,4 +203,19 @@ describe("PosixTerminalProvider Persistent Sessions", () => {
     const status = provider.getSessionStatus("non-existent-session");
     expect(status).toBeNull();
   });
+
+  it("stop() kills every running session, pty and pipe", async () => {
+    const ptyId = await startSession(true);
+    const pipeId = await startSession(false);
+    const sessions = (provider as unknown as { sessions: Map<string, { process: Bun.Subprocess }> }).sessions;
+    const processes = [sessions.get(ptyId)!.process, sessions.get(pipeId)!.process];
+    expect(processes.every(proc => proc.exitCode === null && proc.signalCode === null)).toBe(true);
+
+    await provider.stop(500);
+
+    expect(provider.getSessionStatus(ptyId)).toBeNull();
+    expect(provider.getSessionStatus(pipeId)).toBeNull();
+    await Promise.all(processes.map(proc => proc.exited));
+    expect(processes.every(proc => proc.exitCode !== null || proc.signalCode !== null)).toBe(true);
+  });
 });

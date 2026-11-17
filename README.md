@@ -1,31 +1,28 @@
 # @tokenring-ai/posix-system
 
-Concrete POSIX filesystem and terminal providers for TokenRing applications, enabling agents to interact with the local
-system in a controlled manner.
+The POSIX terminal provider for TokenRing applications, enabling agents to run shell commands on the local system in a
+controlled manner.
 
 ## Overview
 
-The `posix-system` package provides two core providers that implement TokenRing's filesystem and terminal abstractions
-for Unix-like environments:
+The `posix-system` package provides one provider that implements TokenRing's terminal abstraction for Unix-like
+environments:
 
-- **PosixFileSystemProvider** — Local filesystem operations using `fs-extra`, Bun's `Glob`, and Node's recursive
-  `fs.watch`.
 - **PosixTerminalProvider** — Shell command execution via `Bun.spawn` with optional sandboxing (bubblewrap on Linux,
   `sandbox-exec` on macOS) and persistent interactive PTY sessions.
 
-Both providers integrate with TokenRing's service architecture. The plugin registers a single `"posix"` provider instance
-with `FileSystemService` and `TerminalService` during the `reconfigure` lifecycle hook.
+The plugin registers a single `"posix"` terminal provider with `TerminalService` during the `reconfigure` lifecycle hook.
+
+The host filesystem is not provided here. There is one host filesystem, `HostFileSystem` in `@tokenring-ai/filesystem`
+(it used to be `PosixFileSystemProvider` in this package); it has no provider registry and no settings. The former
+`posix.filesystem` config key is removed and the schema rejects it.
 
 ### Key Features
 
-- **Filesystem operations**: Read, write, append, delete, rename, copy, stat, glob, grep, and watch
-- **Ignore-aware operations**: Listing and searching methods accept ignore filters for respecting VCS/IDE patterns
-- **File watching**: Node's recursive `fs.watch` backend with stability thresholds and debounced event emission
 - **Shell execution**: `Bun.spawn` with timeout, combined stdout/stderr, detached process groups, and output capping
 - **Bubblewrap sandboxing**: Optional Linux sandbox with read-only system directories and restricted write access
 - **sandbox-exec sandboxing**: Optional macOS sandbox with deny-by-default file writes and no network access
 - **Interactive sessions**: Persistent PTY or pipe-mode sessions via Bun's native terminal API
-- **Async generators**: Directory tree traversal via async generators for memory-efficient iteration
 
 ## Installation
 
@@ -35,13 +32,11 @@ bun add @tokenring-ai/posix-system
 
 ## Chat Commands
 
-This package does not define any chat commands. It provides providers that are consumed by the `FileSystemService` and
-`TerminalService`.
+This package does not define any chat commands. It provides a terminal provider that is consumed by the `TerminalService`.
 
 ## Tools
 
-This package does not define any tools. It provides providers that are consumed by the `FileSystemService` and
-`TerminalService`.
+This package does not define any tools. It provides a terminal provider that is consumed by the `TerminalService`.
 
 ## Configuration
 
@@ -50,7 +45,6 @@ plugin works with an empty configuration.
 
 ```yaml
 posix:
-  filesystem: {}
   terminal:
     sandboxProvider: auto
     interactiveMode: pty
@@ -61,7 +55,6 @@ posix:
 
 | Field | Type | Required | Default | Description |
 |-------|------|----------|---------|-------------|
-| `filesystem` | `object` | No | `{}` | Filesystem provider options (currently no fields) |
 | `terminal` | `TerminalConfig` | No | (see defaults below) | Terminal provider options |
 | `terminal.sandboxProvider` | `"auto" \| "bubblewrap" \| "sandbox-exec"` | No | `"auto"` | Sandboxing mechanism used to isolate shell commands |
 | `terminal.interactiveMode` | `"pty" \| "pipe"` | No | `"pty"` | How interactive sessions attach to the shell. `"pty"` gives the shell a real terminal (color, echo, working prompts); `"pipe"` uses plain stdio, producing cleaner text with no escape sequences |
@@ -82,7 +75,7 @@ The following `.meta()` annotations are used for config UI integration:
 | `terminal.cols` | `description` | `"Default pty width in columns"` |
 | `terminal.rows` | `description` | `"Default pty height in rows"` |
 | `posix` (root) | `label` | `"POSIX System"` |
-| `posix` (root) | `description` | `"Local POSIX filesystem and terminal provider settings"` |
+| `posix` (root) | `description` | `"Local POSIX terminal provider settings"` |
 
 ### Sandboxing
 
@@ -117,100 +110,6 @@ When `sandbox-exec` is active, the sandbox uses a deny-by-default profile:
 - No network access
 
 ## Core Components
-
-### PosixFileSystemProvider
-
-A concrete implementation of the `FileSystemProvider` interface that provides access to the local filesystem.
-
-```typescript
-export default class PosixFileSystemProvider implements FileSystemProvider
-```
-
-**Constructor:**
-
-```typescript
-constructor(options?: PosixFileSystemProviderOptions)
-```
-
-The options schema (`PosixFileSystemProviderOptionsSchema`) is an empty object; no configuration is currently required.
-
-**Properties:**
-
-| Property | Type | Description |
-|----------|------|-------------|
-| `name` | `string` | Provider name (`"PosixFilesystemProvider"`) |
-| `description` | `string` | Provider description (`"Provides access to a local, posix style filesystem"`) |
-| `options` | `PosixFileSystemProviderOptions` | Configuration options passed to the constructor |
-
-**File Operations:**
-
-| Method | Signature | Description |
-|--------|-----------|-------------|
-| `writeFile` | `writeFile(filePath: string, content: string \| Buffer): Promise<boolean>` | Create or overwrite a file (creates parent directories) |
-| `appendFile` | `appendFile(filePath: string, content: string \| Buffer): Promise<boolean>` | Append content to a file (creates the file if it does not exist) |
-| `deleteFile` | `deleteFile(filePath: string): Promise<boolean>` | Delete a file; throws if the path does not exist or is not a file |
-| `deleteDirectory` | `deleteDirectory(dirPath: string): Promise<boolean>` | Recursively delete a directory; throws for files, symbolic links (checked with `lstat`), missing paths and the filesystem root. Allow-list and protected-root checks are done by `FileSystemService` |
-| `readFile` | `readFile(filePath: string): Promise<Buffer \| null>` | Read file content; returns `null` if the file does not exist or cannot be read |
-| `rename` | `rename(oldPath: string, newPath: string): Promise<boolean>` | Rename or move a file; throws if the source does not exist or the destination already exists |
-| `exists` | `exists(filePath: string): Promise<boolean>` | Check if a path exists |
-| `stat` | `stat(filePath: string): Promise<StatLike>` | Get file/directory statistics; returns `{ exists: false, path }` on error |
-| `createDirectory` | `createDirectory(dirPath: string, options?: { recursive?: boolean }): Promise<boolean>` | Create a directory; throws if the path exists but is not a directory, or if the parent does not exist (non-recursive) |
-| `copy` | `copy(source: string, destination: string, options?: { overwrite?: boolean }): Promise<boolean>` | Copy files or directories; throws if the source does not exist or the destination exists without `overwrite` |
-
-**Search and Listing:**
-
-| Method | Signature | Description |
-|--------|-----------|-------------|
-| `glob` | `glob(pattern: string, options: GlobOptions): Promise<string[]>` | Find files matching a glob pattern using Bun's `Glob`; returns absolute paths |
-| `grep` | `grep(searchString: string \| string[], options: GrepOptions): Promise<GrepResult[]>` | Search for text in files with optional context lines |
-| `getDirectoryTree` | `getDirectoryTree(dir: string, options: DirectoryTreeOptions): AsyncGenerator<string>` | Traverse a directory tree, yielding file paths and directory paths (with trailing `/`) |
-| `watch` | `watch(dir: string, options: WatchOptions): Promise<PosixFileSystemWatcher>` | Watch a directory for changes with stability-based debouncing |
-
-**`glob` options** (`GlobOptions`):
-
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| `ignoreFilter` | `(path: string) => boolean` | Returns `true` to exclude a path |
-| `absolute` | `boolean` | Return absolute paths (the implementation always sets this to `true`) |
-| `includeDirectories` | `boolean` | Include directories in results (default: `false`) |
-
-**`grep` options** (`GrepOptions`):
-
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| `ignoreFilter` | `(path: string) => boolean` | Returns `true` to exclude a path |
-| `includeContent` | `{ linesBefore?: number; linesAfter?: number }` | Include context lines around matches |
-| `cwd` | `string` | Absolute directory to search (required) |
-| `maxResults` | `number` | Stop after this many matching lines |
-| `ignoreCase` | `boolean` | Case-insensitive matching (default: `false`) |
-
-**`getDirectoryTree` options** (`DirectoryTreeOptions`):
-
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| `ignoreFilter` | `(path: string) => boolean` | Returns `true` to exclude a path |
-| `recursive` | `boolean` | Recurse into subdirectories (default: `true`) |
-
-**`watch` options** (`WatchOptions`):
-
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| `ignoreFilter` | `(path: string) => boolean` | Returns `true` to exclude a path |
-| `pollInterval` | `number` | Polling interval in ms for stability checks (default: `1000`) |
-| `stabilityThreshold` | `number` | Time in ms a file must remain unchanged before emitting an event (default: `2000`) |
-
-**`PosixFileSystemWatcher`:**
-
-The watcher returned by `watch()` extends `EventEmitter` and implements the `FileSystemWatcher` interface. It emits:
-
-| Event | Listener Signature | Description |
-|-------|-------------------|-------------|
-| `"add"` | `(filePath: string) => void` | A new file was detected and stabilized |
-| `"change"` | `(filePath: string) => void` | An existing file was modified and stabilized |
-| `"unlink"` | `(filePath: string) => void` | A file was removed |
-| `"error"` | `(error: Error) => void` | An error occurred during watching |
-
-Call `watcher.close()` to stop watching and release resources.
 
 ### PosixTerminalProvider
 
@@ -317,7 +216,7 @@ Both methods return an `ExecuteCommandResult` discriminated union on `status`:
 
 ## Plugin Lifecycle
 
-This plugin defines no agent lifecycle hooks. It registers providers during the `reconfigure` lifecycle hook.
+This plugin defines no agent lifecycle hooks. It registers the terminal provider during the `reconfigure` lifecycle hook.
 
 **Plugin metadata:**
 
@@ -335,11 +234,9 @@ No-op. Providers are registered in `reconfigure` once config is available.
 
 **`reconfigure(app, config)`:**
 
-Registers a single `"posix"` provider with each service:
+Registers a single `"posix"` terminal provider:
 
-1. Waits for `FileSystemService` to be available, then registers a `PosixFileSystemProvider` initialized with
-   `config.posix.filesystem`.
-2. Waits for `TerminalService` to be available, then registers a `PosixTerminalProvider` initialized with the app
+1. Waits for `TerminalService` to be available, then registers a `PosixTerminalProvider` initialized with the app
    instance, the terminal service, and `config.posix.terminal`.
 
 Since registration uses `set` (overwrites), `reconfigure` is safe to call repeatedly.
@@ -365,96 +262,18 @@ await pluginManager.installPlugins([posixSystemPlugin]);
 
 | Export | Source |
 |--------|--------|
-| `PosixFileSystemProvider` | `PosixFileSystemProvider.ts` |
 | `PosixTerminalProvider` | `PosixTerminalProvider.ts` |
-| `PosixFileSystemProviderOptions` | `schema.ts` (type) |
 | `PosixTerminalProviderOptions` | `schema.ts` (type) |
 | `PosixConfig` | `schema.ts` (type) |
 | `PosixConfigSchema` | `schema.ts` (schema) |
-| `PosixFileSystemProviderOptionsSchema` | `schema.ts` (schema) |
 | `PosixTerminalProviderOptionsSchema` | `schema.ts` (schema) |
 | `default` (plugin) | `plugin.ts` (via subpath import) |
 
 ## RPC Endpoints
 
-This package does not define RPC endpoints. It provides providers that are consumed by the `FileSystemService` and
-`TerminalService`.
+This package does not define RPC endpoints. It provides a terminal provider that is consumed by the `TerminalService`.
 
 ## Usage Examples
-
-### Filesystem Provider
-
-```typescript
-import { PosixFileSystemProvider } from "@tokenring-ai/posix-system";
-
-const fsProvider = new PosixFileSystemProvider({});
-
-// Basic file operations
-await fsProvider.writeFile("test.txt", "Hello, World!");
-const content = await fsProvider.readFile("test.txt");
-if (content) {
-  console.log(content.toString()); // "Hello, World!"
-}
-
-// Check if file exists
-const exists = await fsProvider.exists("test.txt");
-console.log(exists); // true
-
-// Get file statistics
-const stats = await fsProvider.stat("test.txt");
-if (stats.exists) {
-  console.log(stats.isFile);       // true
-  console.log(stats.size);         // 13
-  console.log(stats.modified);     // Date object
-}
-
-// Directory operations
-await fsProvider.createDirectory("subdir", { recursive: true });
-await fsProvider.writeFile("subdir/file.txt", "Content");
-
-// Copy files
-await fsProvider.copy("test.txt", "test_copy.txt");
-
-// Rename files
-await fsProvider.rename("test_copy.txt", "renamed.txt");
-
-// Find files matching patterns
-const files = await fsProvider.glob("**/*.txt", {
-  ignoreFilter: (file) => file.includes("node_modules"),
-  includeDirectories: false,
-});
-console.log(files); // ["test.txt", "subdir/file.txt", "renamed.txt"]
-
-// Search for text in files with context
-const results = await fsProvider.grep("Hello", {
-  ignoreFilter: (file) => file.includes("node_modules"),
-  includeContent: {
-    linesBefore: 1,
-    linesAfter: 1,
-  },
-});
-console.log(results);
-// [{ file: "test.txt", line: 1, match: "Hello, World!", content: "Hello, World!" }]
-
-// Watch for file changes
-const watcher = await fsProvider.watch(".", {
-  ignoreFilter: (file) => file.includes("node_modules"),
-  pollInterval: 1000,
-  stabilityThreshold: 2000,
-});
-
-watcher.on("add", (path) => console.log(`File added: ${path}`));
-watcher.on("change", (path) => console.log(`File changed: ${path}`));
-watcher.on("unlink", (path) => console.log(`File removed: ${path}`));
-
-// Async directory tree traversal
-for await (const file of fsProvider.getDirectoryTree(".", {
-  ignoreFilter: (file) => file.includes("node_modules"),
-  recursive: true,
-})) {
-  console.log(file);
-}
-```
 
 ### Terminal Provider
 
@@ -553,18 +372,6 @@ terminalProvider.terminateSession(sessionId);
 
 ## Best Practices
 
-### Filesystem Provider Best Practices
-
-1. **Use ignore filters**: When performing glob or grep operations, always provide an ignore filter to respect project
-   conventions (e.g., ignore `node_modules`, `.git`).
-2. **Handle null returns**: `readFile()` returns `null` for non-existent or unreadable files, so always check for null
-   before using the result.
-3. **Use recursive operations wisely**: When creating directories or copying, use the `recursive` option to handle nested
-   structures.
-4. **Memory-efficient traversal**: Use `getDirectoryTree()` async generator for large directory trees to avoid loading
-   everything into memory.
-5. **Close watchers**: Always call `watcher.close()` when done to release file descriptors and timers.
-
 ### Terminal Provider Best Practices
 
 1. **Set appropriate timeouts**: For long-running commands, set `timeoutSeconds` to prevent hanging.
@@ -581,7 +388,6 @@ terminalProvider.terminateSession(sessionId);
 | Package | Purpose |
 |---------|---------|
 | `@tokenring-ai/app` | Token Ring application framework and plugin architecture |
-| `@tokenring-ai/filesystem` | Abstract filesystem provider interfaces and services |
 | `@tokenring-ai/terminal` | Abstract terminal provider interfaces and services |
 | `@tokenring-ai/utility` | Utility functions including `arrayableToArray`, `EnhancedMap`, and `formatLogMessages` |
 | `fs-extra` | File system utilities (`outputFile`, `appendFile`, `copy`, `pathExists`, etc.) |
@@ -612,10 +418,8 @@ Run tests with coverage:
 bun test --coverage
 ```
 
-The test suite includes integration tests for both providers:
+The test suite includes integration tests for the terminal provider:
 
-- `test/PosixFileSystemProvider.integration.test.ts` — Tests file operations, directory operations, error handling,
-  glob patterns, and watch event detection.
 - `test/PosixTerminalProvider.integration.test.ts` — Tests shell command execution, error handling, and timeout
   behavior.
 - `test/PosixTerminalProvider.persistent.test.ts` — Tests persistent interactive sessions including pty/pipe modes,

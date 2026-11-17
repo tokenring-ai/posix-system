@@ -4,7 +4,6 @@
   "description": "Low-level system utilities for Unix-like environments, including process and signal management.",
   "dependencies": {
     "@tokenring-ai/app": "workspace:*",
-    "@tokenring-ai/filesystem": "workspace:*",
     "@tokenring-ai/terminal": "workspace:*",
     "@tokenring-ai/utility": "workspace:*",
     "fs-extra": "^11.4.1",

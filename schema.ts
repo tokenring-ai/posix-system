@@ -1,9 +1,6 @@
 import type { ConfigFieldMeta } from "@tokenring-ai/app/config/metadata";
 import { z } from "zod";
 
-export const PosixFileSystemProviderOptionsSchema = z.object({});
-export type PosixFileSystemProviderOptions = z.output<typeof PosixFileSystemProviderOptionsSchema>;
-
 export const PosixTerminalProviderOptionsSchema = z.object({
   sandboxProvider: z
     .enum(["auto", "bubblewrap", "sandbox-exec"])
@@ -46,8 +43,9 @@ export type PosixTerminalProviderOptions = z.output<typeof PosixTerminalProvider
 
 export const PosixConfigSchema = z
   .object({
-    filesystem: PosixFileSystemProviderOptionsSchema.prefault({}),
+    /** Removed: the host filesystem lives in the filesystem plugin and has no settings. */
+    filesystem: z.never().exactOptional(),
     terminal: PosixTerminalProviderOptionsSchema.prefault({}).meta({ label: "Terminal" } satisfies ConfigFieldMeta),
   })
-  .meta({ label: "POSIX System", description: "Local POSIX filesystem and terminal provider settings" } satisfies ConfigFieldMeta);
+  .meta({ label: "POSIX System", description: "Local POSIX terminal provider settings" } satisfies ConfigFieldMeta);
 export type PosixConfig = z.output<typeof PosixConfigSchema>;

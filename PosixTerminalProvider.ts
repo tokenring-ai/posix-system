@@ -507,6 +507,36 @@ export default class PosixTerminalProvider implements InteractiveTerminalProvide
     this.sessions.delete(sessionId);
   }
 
+  /**
+   * Shutdown: terminates every interactive session this provider started (SIGTERM plus closing the
+   * PTY, which hangs up the shell), then SIGKILLs any that are still running after a grace period —
+   * interactive shells ignore SIGTERM.
+   */
+  async stop(gracePeriodMs = 1000): Promise<void> {
+    const processes = [...this.sessions.values()].map(session => session.process);
+    // Deleting the current entry while iterating a Map is safe.
+    for (const sessionId of this.sessions.keys()) this.terminateSession(sessionId);
+
+    await Promise.all(
+      processes.map(async proc => {
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        const exited = await Promise.race([
+          proc.exited.then(() => true),
+          new Promise<false>(resolve => {
+            timer = setTimeout(() => resolve(false), gracePeriodMs);
+          }),
+        ]);
+        clearTimeout(timer);
+        if (exited) return;
+        try {
+          proc.kill("SIGKILL");
+        } catch {
+          // already exited
+        }
+      }),
+    );
+  }
+
   getSessionStatus(sessionId: string): SessionStatus | null {
     const session = this.sessions.get(sessionId);
     if (!session) return null;
